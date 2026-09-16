@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Link, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { HashRouter, Link, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ArrowRight, Check, Minus, Plus, ShoppingBag, X } from 'lucide-react';
 import './styles.css';
 import { createPaymentSession } from './services/paymentService';
@@ -164,4 +164,4 @@ function Checkout() {
 
 function App() { const location = useLocation(); useEffect(() => { window.scrollTo(0, 0); document.title = location.pathname === '/' ? 'CHAI AND CITY — No dabas līdz tavām mājām' : `CHAI AND CITY — ${location.pathname.includes('checkout') ? 'Noformēt pasūtījumu' : 'Tējas'}`; }, [location.pathname]); return <><Header /><Routes><Route path="/" element={<Home />} /><Route path="/kolekcijas" element={<Collections />} /><Route path="/produkti/:id" element={<ProductDetail />} /><Route path="/grozins" element={<Cart />} /><Route path="/checkout" element={<Checkout />} /></Routes><footer className="site-footer"><span className="brand">CHAI AND CITY</span><span>Ražots Latvijā · © 2026</span><span>Instagram</span></footer></>; }
 
-createRoot(document.getElementById('root')).render(<BrowserRouter><CartProvider><App /></CartProvider></BrowserRouter>);
+createRoot(document.getElementById('root')).render(<HashRouter><CartProvider><App /></CartProvider></HashRouter>);
