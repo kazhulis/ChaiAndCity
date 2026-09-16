@@ -25,6 +25,7 @@ const products = [
     id: 'uguns-udens-stihijas',
     name: 'UGUNS/ŪDENS',
     collection: 'stihijas',
+    woocommerceId: null,
     price: 12,
     image: getProductImage('uguns-udens', 'https://images.unsplash.com/photo-1544787219-7f47ccb76574?auto=format&fit=crop&w=1200&q=85'),
     description: 'Spēcīga, silta un līdzsvarojoša tējas kompozīcija vakariem, kad gribas atgriezties pie sevis.',
@@ -34,6 +35,7 @@ const products = [
     id: 'zeme-gaiss-stihijas',
     name: 'ZEME/GAISS',
     collection: 'stihijas',
+    woocommerceId: null,
     price: 12,
     image: getProductImage('zeme-gaiss', 'https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&w=1200&q=85'),
     description: 'Maiga un viegla zāļu tēja mierīgam rītam un lēnām sarunām pie galda.',
@@ -41,8 +43,9 @@ const products = [
   },
   {
     id: 'vinš-vina-stihijas',
-    name: 'VĪŅŠ/VIŅA',
+    name: 'VIŅŠ/VIŅA',
     collection: 'stihijas',
+    woocommerceId: null,
     price: 12,
     image: getProductImage('vins-vina', 'https://images.unsplash.com/photo-1594631252845-29fc4cc8cde9?auto=format&fit=crop&w=1200&q=85'),
     description: 'Izteiksmīgs, augļains maisījums ar vakara noskaņu un dziļu, samtainu garšu.',
@@ -52,6 +55,7 @@ const products = [
     id: 'saule-meness-stihijas',
     name: 'SAULE/MĒNESS',
     collection: 'stihijas',
+    woocommerceId: null,
     price: 12,
     image: getProductImage('saule-meness', 'https://images.unsplash.com/photo-1564890369478-c89ca6d9cde9?auto=format&fit=crop&w=1200&q=85'),
     description: 'Gaiša, citrusaina tēja, kas ievelk saules gaismu arī pelēkākā dienā.',
@@ -142,12 +146,15 @@ function Checkout() {
     setError('');
     const form = new FormData(event.currentTarget);
     try {
-      await createPaymentSession({
-        customer: Object.fromEntries(form.entries()),
-        items: items.map(({ id, quantity }) => ({ id, quantity })),
+      const values = Object.fromEntries(form.entries());
+      const payment = await createPaymentSession({
+        customer: { firstName: values.firstName, lastName: values.lastName, email: values.email, phone: values.phone },
+        delivery: { method: values.deliveryMethod, location: values.deliveryLocation, cost: shipping },
+        items: items.map(({ id, woocommerceId, quantity }) => ({ productId: woocommerceId || id, quantity })),
         total: subtotal + shipping,
       });
-      setSubmitted(true);
+      if (payment.checkoutUrl) window.location.assign(payment.checkoutUrl);
+      else setSubmitted(true);
     } catch (requestError) {
       setError(requestError.message);
     }
