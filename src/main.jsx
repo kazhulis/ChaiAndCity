@@ -66,7 +66,13 @@ const products = [
 const CartContext = createContext(null);
 function CartProvider({ children }) {
   const [items, setItems] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('chai-cart')) || []; } catch { return []; }
+    try {
+      const storedItems = JSON.parse(localStorage.getItem('chai-cart')) || [];
+      return storedItems.map((item) => ({
+        ...item,
+        woocommerceId: item.woocommerceId ?? products.find((product) => product.id === item.id)?.woocommerceId,
+      }));
+    } catch { return []; }
   });
   useEffect(() => localStorage.setItem('chai-cart', JSON.stringify(items)), [items]);
   const add = (product, quantity = 1) => setItems((current) => {
@@ -150,7 +156,10 @@ function Checkout() {
       const payment = await createPaymentSession({
         customer: { firstName: values.firstName, lastName: values.lastName, email: values.email, phone: values.phone },
         delivery: { method: values.deliveryMethod, location: values.deliveryLocation, cost: shipping },
-        items: items.map(({ woocommerceId, quantity }) => ({ productId: woocommerceId, quantity })),
+        items: items.map((item) => ({
+          productId: item.woocommerceId ?? products.find((product) => product.id === item.id)?.woocommerceId,
+          quantity: item.quantity,
+        })),
         total: subtotal + shipping,
       });
       if (payment.checkoutUrl) window.location.assign(payment.checkoutUrl);
