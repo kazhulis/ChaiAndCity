@@ -1,7 +1,7 @@
-const API_URL = 'https://api.chaiandcity.lv';
-
 // Keep payment creation on the server. The frontend should only send an order
 // payload and follow the provider URL returned by the backend.
+const API_URL = 'https://api.chaiandcity.lv';
+
 export async function createPaymentSession(order) {
   const response = await fetch(`${API_URL}/api/payments/sessions`, {
     method: 'POST',
@@ -10,7 +10,8 @@ export async function createPaymentSession(order) {
   });
 
   if (!response.ok) {
-    throw new Error('Neizdevās izveidot maksājuma sesiju.');
+    const body = await response.json().catch(() => null);
+    throw new Error(body?.message || 'Neizdevās izveidot maksājuma sesiju.');
   }
 
   return response.json();
