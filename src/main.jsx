@@ -150,7 +150,7 @@ function Checkout() {
       const payment = await createPaymentSession({
         customer: { firstName: values.firstName, lastName: values.lastName, email: values.email, phone: values.phone },
         delivery: { method: values.deliveryMethod, location: values.deliveryLocation, cost: shipping },
-        items: items.map(({ id, woocommerceId, quantity }) => ({ productId: woocommerceId || id, quantity })),
+        items: items.map(({ woocommerceId, quantity }) => ({ productId: woocommerceId, quantity })),
         total: subtotal + shipping,
       });
       if (payment.checkoutUrl) window.location.assign(payment.checkoutUrl);

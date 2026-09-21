@@ -12,7 +12,14 @@ const app = express();
 const woocommerce = new WooCommerceService();
 const swotzy = new SwotzyService();
 
-app.use(cors({ origin: config.frontendUrl }));
+const allowedOrigins = [
+  config.frontendUrl,
+  'http://localhost:5173',
+];
+
+app.use(cors({
+  origin: allowedOrigins,
+}));
 app.use(express.json({ verify: (request, _response, buffer) => { request.rawBody = buffer; } }));
 
 app.get('/api/health', (_request, response) => response.json({ ok: true, environment: config.nodeEnv }));
