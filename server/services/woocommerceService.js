@@ -42,7 +42,12 @@ export class WooCommerceService {
         shipping: { first_name: order.customer.firstName, last_name: order.customer.lastName },
         line_items: order.items.map((item) => ({ product_id: item.productId, quantity: item.quantity })),
         shipping_lines: [{ method_id: order.delivery.method, method_title: order.delivery.method, total: order.delivery.cost.toFixed(2) }],
-        meta_data: [{ key: 'delivery_location', value: order.delivery.location }],
+        meta_data: [
+          { key: 'delivery_location', value: order.delivery.location },
+          { key: 'terms_accepted', value: String(order.termsAccepted) },
+          { key: 'privacy_accepted', value: String(order.privacyAccepted) },
+          { key: 'consent_accepted_at', value: order.consentAcceptedAt },
+        ],
       }),
     });
   }

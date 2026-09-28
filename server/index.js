@@ -35,7 +35,9 @@ app.get('/api/shipping/lockers', async (_request, response, next) => {
 app.post('/api/payments/sessions', async (request, response, next) => {
   try {
     validateOrder(request.body);
-    const wooOrder = await woocommerce.createOrder(request.body);
+    const consentAcceptedAt = new Date().toISOString();
+    const orderRequest = { ...request.body, consentAcceptedAt };
+    const wooOrder = await woocommerce.createOrder(orderRequest);
     const order = saveOrder({
       id: wooOrder.id,
       wooCommerceOrderId: wooOrder.id,
@@ -43,9 +45,12 @@ app.post('/api/payments/sessions', async (request, response, next) => {
       paymentStatus: 'pending',
       shippingStatus: 'not_created',
       paymentUrl: wooOrder.payment_url || null,
-      customer: request.body.customer,
-      delivery: request.body.delivery,
-      items: request.body.items,
+      customer: orderRequest.customer,
+      delivery: orderRequest.delivery,
+      items: orderRequest.items,
+      termsAccepted: orderRequest.termsAccepted,
+      privacyAccepted: orderRequest.privacyAccepted,
+      consentAcceptedAt,
       createdAt: new Date().toISOString(),
     });
     response.status(201).json({ orderId: order.id, checkoutUrl: order.paymentUrl, status: order.status });

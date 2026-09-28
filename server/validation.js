@@ -10,6 +10,9 @@ export function validateOrder(input) {
   if (typeof input.delivery.method !== 'string' || typeof input.delivery.location !== 'string' || !input.delivery.location.trim()) {
     throw new Error('Izvēlies piegādes veidu un vietu.');
   }
+  if (input.termsAccepted !== true || input.privacyAccepted !== true) {
+    throw new Error('Lai turpinātu, jāpiekrīt lietošanas noteikumiem un privātuma politikai.');
+  }
   if (input.items.some((item) => ((!Number.isInteger(item.productId) && typeof item.productId !== 'string') || (typeof item.productId === 'string' && !item.productId.trim()) || !Number.isInteger(item.quantity) || item.quantity < 1))) {
     throw new Error('Pasūtījumā ir nederīga prece vai daudzums.');
   }
