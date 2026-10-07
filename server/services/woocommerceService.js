@@ -53,7 +53,16 @@ export class WooCommerceService {
           email: order.customer.email,
           phone: order.customer.phone,
         },
-        shipping: { first_name: order.customer.firstName, last_name: order.customer.lastName },
+        shipping: {
+          first_name: order.customer.firstName,
+          last_name: order.customer.lastName,
+          ...(order.delivery.address ? {
+            address_1: order.delivery.address.street,
+            city: order.delivery.address.city,
+            postcode: order.delivery.address.postcode,
+            country: config.makecommerce.country,
+          } : {}),
+        },
         line_items: order.items.map((item) => ({ product_id: item.productId, quantity: item.quantity })),
         shipping_lines: [{ method_id: order.delivery.method, method_title: order.delivery.method, total: order.delivery.cost.toFixed(2) }],
         meta_data: [

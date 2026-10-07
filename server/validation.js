@@ -10,6 +10,13 @@ export function validateOrder(input) {
   if (typeof input.delivery.method !== 'string' || typeof input.delivery.location !== 'string' || !input.delivery.location.trim()) {
     throw new Error('Izvēlies piegādes veidu un vietu.');
   }
+  if (input.delivery.method.startsWith('courier') || input.delivery.method === 'kurjers') {
+    const address = input.delivery.address;
+    if (!address || ['street', 'city', 'postcode'].some((field) => typeof address[field] !== 'string' || !address[field].trim())) {
+      throw new Error('Lūdzu, norādi kurjera piegādes adresi: iela, pilsēta un pasta indekss.');
+    }
+    if (!/^(LV-?)?\d{4}$/i.test(address.postcode.trim())) throw new Error('Nederīgs pasta indekss.');
+  }
   if (input.termsAccepted !== true || input.privacyAccepted !== true) {
     throw new Error('Lai turpinātu, jāpiekrīt lietošanas noteikumiem un privātuma politikai.');
   }
