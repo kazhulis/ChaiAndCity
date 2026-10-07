@@ -31,10 +31,23 @@ app.get('/api/health', (_request, response) => response.json({ ok: true, environ
 
 const mcShipping = new MakeCommerceShippingService();
 
+const FALLBACK_OPTIONS = [
+  { id: 'pickuppoint:omniva', type: 'pickuppoint', carrier: 'omniva', name: 'Omniva pakomāts', price: 2.99 },
+  { id: 'pickuppoint:dpd', type: 'pickuppoint', carrier: 'dpd', name: 'DPD pakomāts', price: 2.99 },
+  { id: 'courier:dpd', type: 'courier', carrier: 'dpd', name: 'DPD kurjers', price: 5.9 },
+];
+
 async function loadShippingOptions(itemCount = 1) {
   if (!isShippingEnabled()) return swotzy.getShippingOptions();
   const count = Math.max(1, Math.min(Number.parseInt(itemCount, 10) || 1, 100));
-  return mcShipping.getShippingOptions(count * config.makecommerce.itemWeightGrams);
+  try {
+    const options = await mcShipping.getShippingOptions(count * config.makecommerce.itemWeightGrams);
+    if (options.length) return options;
+    console.warn('MakeCommerce returned no shipping rates; complete the Shipping setup. Using fallback options.');
+  } catch (error) {
+    console.error('MakeCommerce rates failed; using fallback options:', error.message);
+  }
+  return FALLBACK_OPTIONS;
 }
 
 app.get('/api/shipping/options', async (request, response, next) => {
