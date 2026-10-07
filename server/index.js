@@ -2,6 +2,8 @@ import crypto from 'node:crypto';
 import cors from 'cors';
 import express from 'express';
 import { assertProductionConfig, config } from './config.js';
+import { ValidationError } from './errors.js';
+import { rateLimit } from './rateLimit.js';
 import { MakeCommerceService, calculateTotal, verifyMac } from './services/makecommerceService.js';
 import { MakeCommerceShippingService, isShippingEnabled, parseOptionId } from './services/makecommerceShippingService.js';
 import { SwotzyService } from './services/swotzyService.js';
@@ -14,7 +16,7 @@ const app = express();
 const woocommerce = new WooCommerceService();
 const swotzy = new SwotzyService();
 const makecommerce = new MakeCommerceService();
-app.set('trust proxy', true);
+app.set('trust proxy', 1);
 
 const allowedOrigins = [
   config.frontendUrl,
@@ -26,6 +28,11 @@ app.use(cors({
 }));
 app.use(express.json({ verify: (request, _response, buffer) => { request.rawBody = buffer; } }));
 app.use(express.urlencoded({ extended: false }));
+
+const readLimiter = rateLimit({ windowMs: 60_000, max: 120 });
+const checkoutLimiter = rateLimit({ windowMs: 10 * 60_000, max: 15 });
+app.use('/api/shipping', readLimiter);
+app.use('/api/orders', readLimiter);
 
 app.get('/api/health', (_request, response) => response.json({ ok: true, environment: config.nodeEnv }));
 
@@ -63,12 +70,18 @@ app.get('/api/shipping/lockers', async (request, response, next) => {
   } catch (error) { next(error); }
 });
 
-app.post('/api/payments/sessions', async (request, response, next) => {
+app.post('/api/payments/sessions', checkoutLimiter, async (request, response, next) => {
   try {
     validateOrder(request.body);
     const consentAcceptedAt = new Date().toISOString();
-    const orderRequest = { ...request.body, consentAcceptedAt };
+    const itemCount = request.body.items.reduce((sum, item) => sum + item.quantity, 0);
+    // Price and shipping are always computed server-side; client-supplied amounts are ignored.
+    const { shipping, total } = calculateTotal(request.body, await loadShippingOptions(itemCount));
+    const orderRequest = { ...request.body, delivery: { ...request.body.delivery, cost: shipping }, consentAcceptedAt };
     const wooOrder = await woocommerce.createOrder(orderRequest);
+    if (wooOrder.total !== undefined && Math.abs(Number(wooOrder.total) - total) > 0.01) {
+      console.warn(`Order ${wooOrder.id}: WooCommerce total ${wooOrder.total} differs from charged total ${total.toFixed(2)}.`);
+    }
     const order = saveOrder({
       id: wooOrder.id,
       wooCommerceOrderId: wooOrder.id,
@@ -85,7 +98,6 @@ app.post('/api/payments/sessions', async (request, response, next) => {
       createdAt: new Date().toISOString(),
     });
     if (config.makecommerce.enabled) {
-      const { total } = calculateTotal(orderRequest, await loadShippingOptions(orderRequest.items.reduce((sum, item) => sum + item.quantity, 0)));
       const transaction = await makecommerce.createTransaction({
         orderId: order.id,
         amount: total,
@@ -100,17 +112,14 @@ app.post('/api/payments/sessions', async (request, response, next) => {
   } catch (error) { next(error); }
 });
 
-app.get('/api/orders/:orderId', async (request, response, next) => {
-  try {
-    const localOrder = getOrder(request.params.orderId);
-    const wooOrder = await woocommerce.getOrder(request.params.orderId);
-    if (!localOrder && !wooOrder) return response.status(404).json({ message: 'Pasūtījums nav atrasts.' });
-    response.json({ ...localOrder, status: wooOrder?.status || localOrder?.status, paymentStatus: wooOrder?.date_paid ? 'paid' : localOrder?.paymentStatus });
-  } catch (error) { next(error); }
+app.get('/api/orders/:orderId', (request, response) => {
+  const order = getOrder(request.params.orderId);
+  if (!order) return response.status(404).json({ message: 'Pasūtījums nav atrasts.' });
+  response.json({ status: order.status, paymentStatus: order.paymentStatus });
 });
 
 function verifySignature(request, secret, headerName) {
-  if (!secret) return config.nodeEnv !== 'production';
+  if (!secret) return false;
   const received = request.header(headerName);
   if (!received || !request.rawBody) return false;
   const expected = crypto.createHmac('sha256', secret).update(request.rawBody).digest('base64');
@@ -175,19 +184,18 @@ app.post('/api/webhooks/makecommerce', async (request, response) => {
   try {
     const order = getOrder(message.reference);
     const amountMatches = order && Number(message.amount) === Number(order.amount?.toFixed(2));
-    if (['COMPLETED', 'APPROVED'].includes(message.status) && amountMatches) await markPaid(message.reference);
-    else if (order && ['CANCELLED', 'EXPIRED', 'FAILED'].includes(message.status)) updateOrder(message.reference, { paymentStatus: message.status.toLowerCase() });
+    const transactionMatches = order && (!message.transaction || message.transaction === order.transactionId);
+    const currencyMatches = !message.currency || message.currency === 'EUR';
+    if (['COMPLETED', 'APPROVED'].includes(message.status) && amountMatches && transactionMatches && currencyMatches) await markPaid(message.reference);
+    else if (order && order.paymentStatus !== 'paid' && transactionMatches && ['CANCELLED', 'EXPIRED', 'FAILED'].includes(message.status)) updateOrder(message.reference, { paymentStatus: message.status.toLowerCase() });
   } catch (error) { console.error('MakeCommerce notification handling failed', error); }
-});
-
-app.post('/api/webhooks/payment', (request, response) => {
-  if (!verifySignature(request, config.webhookSecrets.payment, 'x-payment-signature')) return response.status(401).json({ message: 'Invalid webhook signature.' });
-  response.status(202).json({ received: true, message: 'Configure the provider-specific event mapping here.' });
 });
 
 app.use((error, _request, response, _next) => {
   console.error(error);
-  response.status(400).json({ message: error.message || 'Server error.' });
+  if (error instanceof ValidationError) return response.status(400).json({ message: error.message });
+  if (error.type === 'entity.parse.failed' || error.type === 'entity.too.large') return response.status(400).json({ message: 'Nederīgs pieprasījums.' });
+  response.status(500).json({ message: 'Radās kļūda. Lūdzu, mēģini vēlreiz vēlāk.' });
 });
 
 app.listen(config.port, () => console.log(`CHAI AND CITY API listening on http://localhost:${config.port}`));

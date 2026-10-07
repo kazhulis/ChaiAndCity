@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { config } from '../config.js';
+import { ValidationError } from '../errors.js';
 
 const PRODUCT_PRICES = { 21: 12, 20: 12, 22: 12, 13: 12 };
 const FREE_SHIPPING_OVER = 40;
@@ -7,11 +8,11 @@ const FREE_SHIPPING_OVER = 40;
 export function calculateTotal(order, shippingOptions) {
   const subtotal = order.items.reduce((sum, item) => {
     const price = PRODUCT_PRICES[item.productId];
-    if (price === undefined) throw new Error('Pasūtījumā ir nezināma prece.');
+    if (price === undefined) throw new ValidationError('Pasūtījumā ir nezināma prece.');
     return sum + price * item.quantity;
   }, 0);
   const option = shippingOptions.find((entry) => entry.id === order.delivery.method);
-  if (!option) throw new Error('Nederīgs piegādes veids.');
+  if (!option) throw new ValidationError('Nederīgs piegādes veids.');
   const shipping = subtotal > FREE_SHIPPING_OVER ? 0 : Number(option.price);
   return { subtotal, shipping, total: subtotal + shipping };
 }
