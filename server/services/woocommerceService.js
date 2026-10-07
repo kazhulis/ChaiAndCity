@@ -1,18 +1,32 @@
+import crypto from 'node:crypto';
 import { config } from '../config.js';
 
 function apiUrl(path) {
   return `${config.woocommerce.url.replace(/\/$/, '')}/wp-json/wc/v3${path}`;
 }
 
-function authHeader() {
-  return `Basic ${Buffer.from(`${config.woocommerce.consumerKey}:${config.woocommerce.consumerSecret}`).toString('base64')}`;
+const encode = (value) => encodeURIComponent(value).replace(/[!'()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+
+// One-legged OAuth 1.0a: works even when WordPress does not detect the request as HTTPS,
+// where plain key/secret authentication is silently ignored.
+function signedUrl(method, url) {
+  const params = {
+    oauth_consumer_key: config.woocommerce.consumerKey,
+    oauth_nonce: crypto.randomBytes(12).toString('hex'),
+    oauth_signature_method: 'HMAC-SHA256',
+    oauth_timestamp: String(Math.floor(Date.now() / 1000)),
+  };
+  const normalized = Object.keys(params).sort().map((key) => `${encode(key)}=${encode(params[key])}`).join('&');
+  const base = [method.toUpperCase(), encode(url), encode(normalized)].join('&');
+  params.oauth_signature = crypto.createHmac('sha256', `${config.woocommerce.consumerSecret}&`).update(base).digest('base64');
+  return `${url}?${Object.entries(params).map(([key, value]) => `${encode(key)}=${encode(value)}`).join('&')}`;
 }
 
 async function request(path, options = {}) {
   if (!config.woocommerce.enabled) return null;
-  const response = await fetch(apiUrl(path), {
+  const response = await fetch(signedUrl(options.method || 'GET', apiUrl(path)), {
     ...options,
-    headers: { Authorization: authHeader(), 'Content-Type': 'application/json', ...(options.headers || {}) },
+    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
   });
   const body = await response.json().catch(() => null);
   if (!response.ok) throw new Error(body?.message || `WooCommerce request failed with ${response.status}.`);
