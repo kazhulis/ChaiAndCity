@@ -46,12 +46,15 @@ export class MakeCommerceService {
             notification_url: callback('/api/webhooks/makecommerce'),
           },
         },
-        customer: { email: customer.email, ip, country: 'lv', locale },
-        app_info: { module: 'ChaiAndCity', module_version: '1.0.0' },
+        customer: { email: customer.email, ip: String(ip || '').replace(/^::ffff:/, ''), country: 'lv', locale },
+        app_info: { module: 'ChaiAndCity', module_version: '1.0.0', platform: 'Custom', platform_version: '1.0' },
       }),
     });
     const body = await response.json().catch(() => null);
-    if (!response.ok) throw new Error(body?.message || `MakeCommerce request failed with ${response.status}.`);
+    if (!response.ok) {
+      const details = (body?.errors || []).map((error) => `${error.resource}.${error.field}: ${error.type}`).join(', ');
+      throw new Error(`MakeCommerce: ${body?.message || response.status}${details ? ` (${details})` : ''}`);
+    }
     const redirect = body?.payment_methods?.other?.find((method) => method.name === 'redirect');
     if (!redirect?.url) throw new Error('MakeCommerce neatgrieza maksājuma saiti.');
     return { transactionId: body.id, paymentUrl: redirect.url };
