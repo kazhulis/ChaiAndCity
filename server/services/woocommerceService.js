@@ -52,6 +52,10 @@ export class WooCommerceService {
     });
   }
 
+  async markPaid(orderId) {
+    return request(`/orders/${encodeURIComponent(orderId)}`, { method: 'PUT', body: JSON.stringify({ set_paid: true }) });
+  }
+
   async getOrder(orderId) {
     if (!config.woocommerce.enabled) return null;
     return request(`/orders/${encodeURIComponent(orderId)}`);

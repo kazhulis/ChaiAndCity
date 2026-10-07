@@ -17,6 +17,20 @@ export const config = {
     consumerSecret: process.env.WOOCOMMERCE_CONSUMER_SECRET,
     paymentMethod: process.env.WOOCOMMERCE_PAYMENT_METHOD || undefined,
   },
+  makecommerce: {
+    enabled: process.env.MAKECOMMERCE_ENABLED === 'true',
+    shopId: process.env.MAKECOMMERCE_SHOP_ID,
+    secretKey: process.env.MAKECOMMERCE_SECRET_KEY,
+    apiUrl: process.env.MAKECOMMERCE_API_URL
+      || (process.env.MAKECOMMERCE_TEST === 'false' ? 'https://api.maksekeskus.ee' : 'https://api.test.maksekeskus.ee'),
+    shippingEnabled: process.env.MAKECOMMERCE_SHIPPING_ENABLED === 'true',
+    shippingApiUrl: process.env.MAKECOMMERCE_SHIPPING_API_URL
+      || (process.env.MAKECOMMERCE_TEST === 'false' ? 'https://shipping.makecommerce.net' : 'https://shipping.test.makecommerce.net'),
+    shopInstance: process.env.MAKECOMMERCE_SHOP_INSTANCE || 'chaiandcity-web',
+    country: (process.env.SHIPPING_COUNTRY || 'LV').toUpperCase(),
+    itemWeightGrams: Number(process.env.ITEM_WEIGHT_GRAMS || 100),
+    publicApiUrl: (process.env.PUBLIC_API_URL || `http://localhost:${process.env.PORT || 3001}`).replace(/\/$/, ''),
+  },
   swotzy: {
     enabled: process.env.SWOTZY_ENABLED === 'true',
     apiUrl: process.env.SWOTZY_API_URL,
@@ -29,6 +43,10 @@ export const config = {
 };
 
 export function assertProductionConfig() {
+  if (config.makecommerce.enabled) {
+    required('MAKECOMMERCE_SHOP_ID');
+    required('MAKECOMMERCE_SECRET_KEY');
+  }
   if (config.nodeEnv !== 'production') return;
   if (config.woocommerce.enabled) {
     required('WOOCOMMERCE_URL');

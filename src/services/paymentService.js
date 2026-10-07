@@ -1,6 +1,6 @@
 // Keep payment creation on the server. The frontend should only send an order
 // payload and follow the provider URL returned by the backend.
-const API_URL = 'https://api.chaiandcity.lv';
+const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '' : 'https://api.chaiandcity.lv');
 
 export async function createPaymentSession(order) {
   const response = await fetch(`${API_URL}/api/payments/sessions`, {
