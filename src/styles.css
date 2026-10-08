@@ -1100,9 +1100,9 @@ button {
 }
 
 .site-footer {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
   gap: 16px;
   padding: 28px 32px;
   border-top: 1px solid var(--line);
@@ -1127,10 +1127,18 @@ button {
   display: flex;
   flex-wrap: wrap;
   gap: 18px;
+  justify-content: center;
 }
 
 .footer-links a {
   color: var(--ink);
+}
+
+.footer-meta {
+  display: flex;
+  align-items: center;
+  justify-self: end;
+  gap: 16px;
 }
 
 .site-footer .brand {
@@ -1345,6 +1353,7 @@ button {
   }
 
   .site-footer {
+    display: flex;
     flex-direction: column;
     align-items: flex-start;
     padding: 20px 16px;
@@ -1352,7 +1361,13 @@ button {
 
   .footer-links {
     flex-direction: column;
+    align-self: center;
+    align-items: center;
     gap: 10px;
+  }
+
+  .footer-meta {
+    align-self: center;
   }
 }
 .loading-overlay { position: fixed; inset: 0; z-index: 1000; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; background: rgba(255, 255, 255, 0.85); cursor: wait; }
@@ -1370,3 +1385,6 @@ button {
 .locker-panel li:hover, .locker-panel li.active { background: var(--paper-strong); }
 .locker-panel li.empty { color: var(--muted); cursor: default; font-size: 11px; }
 .locker-panel li.empty:hover { background: transparent; }
+
+.site-footer .footer-social { display: inline-flex; color: var(--ink); text-decoration: none; }
+.site-footer .footer-social:hover { opacity: 0.6; }
