@@ -14,6 +14,20 @@ export function getShippingCountries() {
   return get('countries');
 }
 
+export async function setupMakeCommerceShipping(token) {
+  const response = await fetch(`${API_URL}/api/shipping/setup`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({}),
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(body?.message || 'Neizdevās sākt MakeCommerce piegādes iestatīšanu.');
+  return body;
+}
+
 export function getShippingOptions(items, country) {
   return get('options', { items, country });
 }

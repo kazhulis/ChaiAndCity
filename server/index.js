@@ -31,6 +31,7 @@ app.use(express.urlencoded({ extended: false }));
 
 const readLimiter = rateLimit({ windowMs: 60_000, max: 120 });
 const checkoutLimiter = rateLimit({ windowMs: 10 * 60_000, max: 15 });
+const shippingSetupLimiter = rateLimit({ windowMs: 60 * 60_000, max: 5 });
 app.use('/api/shipping', readLimiter);
 app.use('/api/orders', readLimiter);
 
@@ -48,6 +49,35 @@ async function loadShippingOptions(itemCount = 1, country = config.makecommerce.
 app.get('/api/shipping/countries', (_request, response) => {
   const displayNames = new Intl.DisplayNames(['lv'], { type: 'region' });
   response.json(config.makecommerce.shippingCountries.map((code) => ({ code, name: displayNames.of(code) || code })));
+});
+
+app.post('/api/shipping/setup', shippingSetupLimiter, async (request, response, next) => {
+  try {
+    const setupToken = config.makecommerce.shippingSetupToken;
+    const suppliedToken = request.header('authorization')?.replace(/^Bearer\s+/i, '');
+    if (!setupToken) return response.status(503).json({ message: 'MakeCommerce pārvadājumu iestatīšana nav aktivizēta.' });
+    if (setupToken.length < 32) return response.status(503).json({ message: 'Iestatīšanas tokenam jābūt vismaz 32 rakstzīmju garam.' });
+    if (!suppliedToken) return response.status(401).json({ message: 'Ievadiet derīgu iestatīšanas tokenu.' });
+    const expected = Buffer.from(setupToken);
+    const received = Buffer.from(suppliedToken);
+    if (received.length !== expected.length || !crypto.timingSafeEqual(received, expected)) {
+      return response.status(401).json({ message: 'Ievadiet derīgu iestatīšanas tokenu.' });
+    }
+    if (!isShippingEnabled()) return response.status(503).json({ message: 'MakeCommerce Shipping API nav aktivizēts.' });
+    const shopUrl = new URL(config.frontendUrl);
+    if (shopUrl.protocol !== 'https:' || shopUrl.hostname === 'localhost') {
+      throw new ValidationError('Iestatīšanai nepieciešams veikala publiskais HTTPS URL.');
+    }
+    const connection = await mcShipping.connectShop(shopUrl.origin);
+    if (typeof connection?.jwt !== 'string' || !connection.jwt) {
+      throw new Error('MakeCommerce connected the shop but did not return a Shipping Manager token.');
+    }
+    const managerUrl = new URL('/public/ui/', config.makecommerce.shippingManagerUrl);
+    managerUrl.searchParams.set('jwt', connection.jwt);
+    managerUrl.searchParams.set('locale', 'en');
+    managerUrl.searchParams.set('platform', 'Custom');
+    response.json({ managerUrl: managerUrl.toString() });
+  } catch (error) { next(error); }
 });
 
 app.get('/api/shipping/options', async (request, response, next) => {

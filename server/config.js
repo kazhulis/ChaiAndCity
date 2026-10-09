@@ -35,7 +35,10 @@ export const config = {
     shippingEnabled: process.env.MAKECOMMERCE_SHIPPING_ENABLED === 'true',
     shippingApiUrl: process.env.MAKECOMMERCE_SHIPPING_API_URL
       || (process.env.MAKECOMMERCE_TEST === 'false' ? 'https://shipping.makecommerce.net' : 'https://shipping.test.makecommerce.net'),
+    shippingManagerUrl: process.env.MAKECOMMERCE_SHIPPING_MANAGER_URL
+      || (process.env.MAKECOMMERCE_TEST === 'false' ? 'https://shipping-manager.makecommerce.net' : 'https://shipping-manager.test.makecommerce.net'),
     shopInstance: process.env.MAKECOMMERCE_SHOP_INSTANCE || 'chaiandcity-web',
+    shippingSetupToken: process.env.MAKECOMMERCE_SHIPPING_SETUP_TOKEN,
     country: shippingCountries[0],
     shippingCountries: [...new Set(shippingCountries)],
     itemWeightGrams: Number(process.env.ITEM_WEIGHT_GRAMS || 100),

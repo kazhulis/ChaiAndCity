@@ -4,7 +4,7 @@ import { HashRouter, Link, Route, Routes, useLocation, useNavigate, useParams, u
 import { ArrowRight, Check, Instagram, Lock, Minus, Plus, ShoppingBag, X } from 'lucide-react';
 import './styles.css';
 import { createPaymentSession } from './services/paymentService';
-import { getParcelLockers, getShippingCountries, getShippingOptions } from './services/shippingService';
+import { getParcelLockers, getShippingCountries, getShippingOptions, setupMakeCommerceShipping } from './services/shippingService';
 import heroImage from './assets/IMG_4472.jpg';
 
 const productImageFiles = import.meta.glob('./assets/products/*.{jpg,jpeg,png,webp,avif,svg}', {
@@ -480,11 +480,48 @@ function PaymentResult() {
   return <main className="checkout-page container"><div className="success-message"><Check size={26} /><h2>{text[0]}</h2><p>{text[1]}</p><Link to={status === 'success' ? '/' : '/checkout'} className="button button-dark">{status === 'success' ? 'Atgriezties sākumā' : 'Atpakaļ uz pasūtījumu'}</Link></div></main>;
 }
 
+function ShippingSetup() {
+  const [token, setToken] = useState('');
+  const [managerUrl, setManagerUrl] = useState('');
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const submit = async (event) => {
+    event.preventDefault();
+    setError('');
+    setSubmitting(true);
+    try {
+      const result = await setupMakeCommerceShipping(token);
+      if (typeof result?.managerUrl !== 'string') throw new Error('Iestatīšanas saite netika saņemta.');
+      setManagerUrl(result.managerUrl);
+      setToken('');
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return <main className="page container">
+    <div className="page-title"><span className="eyebrow">MAKECOMMERCE</span><h1>Piegādes iestatīšana</h1></div>
+    <div className="checkout-fields">
+      <p>Šī lapa izveido drošu MakeCommerce Shipping Manager sesiju veikala konfigurēšanai. Iestatīšanas tokenu ievadiet tikai šeit.</p>
+      {!managerUrl ? <form onSubmit={submit}>
+        <label>Iestatīšanas tokens<input required type="password" autoComplete="off" value={token} onChange={(event) => setToken(event.target.value)} /></label>
+        {error && <p className="form-error" role="alert">{error}</p>}
+        <button className="button button-dark" type="submit" disabled={submitting}>{submitting ? 'Veido saiti…' : 'Atvērt Shipping Manager'}</button>
+      </form> : <div className="success-message">
+        <p>Atver saiti, saglabā sūtītāja adresi un pieejamos pārvadātājus, pēc tam atgriezies veikalā un atkārtoti ielādē checkout.</p>
+        <a className="button button-dark" href={managerUrl} target="_blank" rel="noopener noreferrer">Atvērt MakeCommerce Shipping Manager</a>
+      </div>}
+    </div>
+  </main>;
+}
+
 const defaultDescription = 'CHAI AND CITY — dabīgas, rūpīgi sagatavotas tējas no Latvijas. Pasūti tiešsaistē ar piegādi uz pakomātu vai kurjeru.';
 function setMeta(selector, value) {
   document.querySelector(selector)?.setAttribute('content', value);
 }
 
-function App() { const location = useLocation(); useEffect(() => { window.scrollTo(0, 0); const pageTitle = location.pathname === '/' ? 'No dabas līdz tavām mājām' : location.pathname === '/kolekcijas' ? 'Kolekcijas' : location.pathname === '/kolekcijas/stihijas' ? 'STIHIJAS' : location.pathname.includes('checkout') ? 'Noformēt pasūtījumu' : location.pathname.includes('noteikumi') ? 'Lietošanas noteikumi' : location.pathname.includes('privatuma-politika') ? 'Privātuma politika' : 'Tējas'; const product = location.pathname.startsWith('/produkti/') ? products.find((item) => item.id === location.pathname.split('/')[2]) : null; const titleText = product ? product.name : pageTitle; document.title = `CHAI AND CITY — ${titleText}`; const noindex = ['/checkout', '/grozins', '/maksajums'].includes(location.pathname); const descriptions = { '/': defaultDescription, '/kolekcijas': 'Chai and City tējas kolekcijas — dabīgas, rūpīgi sagatavotas tējas no Latvijas.', '/kolekcijas/stihijas': 'STIHIJAS kolekcija — četras dabīgas tējas kompozīcijas: uguns, ūdens, zeme un gaiss.' }; const description = product ? `${product.name} — ${product.description}` : descriptions[location.pathname] || defaultDescription; setMeta('meta[name="description"]', description); setMeta('meta[name="robots"]', noindex ? 'noindex, nofollow' : 'index, follow'); setMeta('meta[property="og:title"]', document.title); setMeta('meta[property="og:description"]', description); if (product) setMeta('meta[property="og:image"]', product.image); }, [location.pathname]); return <><Header /><Routes><Route path="/" element={<Home />} /><Route path="/kolekcijas" element={<Collections />} /><Route path="/kolekcijas/stihijas" element={<ElementsCollection />} /><Route path="/produkti/:id" element={<ProductDetail />} /><Route path="/grozins" element={<Cart />} /><Route path="/checkout" element={<Checkout />} /><Route path="/maksajums" element={<PaymentResult />} /><Route path="/noteikumi" element={<LegalPage type="terms" />} /><Route path="/privatuma-politika" element={<LegalPage type="privacy" />} /></Routes><footer className="site-footer"><div><span className="brand">CHAI AND CITY</span><p>{merchant.name} · Reģ. Nr. {merchant.registrationNumber}<br />{merchant.address}<br /><a href={`mailto:${merchant.email}`}>{merchant.email}</a> · <a href={`tel:${merchant.phone.replace(/\s/g, '')}`}>{merchant.phone}</a></p></div><nav className="footer-links" aria-label="Juridiskā informācija"><Link to="/noteikumi">Lietošanas noteikumi</Link><Link to="/privatuma-politika">Privātuma politika</Link></nav><div className="footer-meta"><a className="footer-social" href="https://www.instagram.com/chaiandcity/" target="_blank" rel="noopener noreferrer" aria-label="Instagram"><Instagram size={18} /></a><span>Ražots Latvijā · © 2026</span></div></footer></>; }
+function App() { const location = useLocation(); useEffect(() => { window.scrollTo(0, 0); const pageTitle = location.pathname === '/' ? 'No dabas līdz tavām mājām' : location.pathname === '/kolekcijas' ? 'Kolekcijas' : location.pathname === '/kolekcijas/stihijas' ? 'STIHIJAS' : location.pathname.includes('checkout') ? 'Noformēt pasūtījumu' : location.pathname.includes('noteikumi') ? 'Lietošanas noteikumi' : location.pathname.includes('privatuma-politika') ? 'Privātuma politika' : location.pathname.includes('shipping-setup') ? 'Piegādes iestatīšana' : 'Tējas'; const product = location.pathname.startsWith('/produkti/') ? products.find((item) => item.id === location.pathname.split('/')[2]) : null; const titleText = product ? product.name : pageTitle; document.title = `CHAI AND CITY — ${titleText}`; const noindex = ['/checkout', '/grozins', '/maksajums', '/shipping-setup'].includes(location.pathname); const descriptions = { '/': defaultDescription, '/kolekcijas': 'Chai and City tējas kolekcijas — dabīgas, rūpīgi sagatavotas tējas no Latvijas.', '/kolekcijas/stihijas': 'STIHIJAS kolekcija — četras dabīgas tējas kompozīcijas: uguns, ūdens, zeme un gaiss.' }; const description = product ? `${product.name} — ${product.description}` : descriptions[location.pathname] || defaultDescription; setMeta('meta[name="description"]', description); setMeta('meta[name="robots"]', noindex ? 'noindex, nofollow' : 'index, follow'); setMeta('meta[property="og:title"]', document.title); setMeta('meta[property="og:description"]', description); if (product) setMeta('meta[property="og:image"]', product.image); }, [location.pathname]); return <><Header /><Routes><Route path="/" element={<Home />} /><Route path="/kolekcijas" element={<Collections />} /><Route path="/kolekcijas/stihijas" element={<ElementsCollection />} /><Route path="/produkti/:id" element={<ProductDetail />} /><Route path="/grozins" element={<Cart />} /><Route path="/checkout" element={<Checkout />} /><Route path="/maksajums" element={<PaymentResult />} /><Route path="/shipping-setup" element={<ShippingSetup />} /><Route path="/noteikumi" element={<LegalPage type="terms" />} /><Route path="/privatuma-politika" element={<LegalPage type="privacy" />} /></Routes><footer className="site-footer"><div><span className="brand">CHAI AND CITY</span><p>{merchant.name} · Reģ. Nr. {merchant.registrationNumber}<br />{merchant.address}<br /><a href={`mailto:${merchant.email}`}>{merchant.email}</a> · <a href={`tel:${merchant.phone.replace(/\s/g, '')}`}>{merchant.phone}</a></p></div><nav className="footer-links" aria-label="Juridiskā informācija"><Link to="/noteikumi">Lietošanas noteikumi</Link><Link to="/privatuma-politika">Privātuma politika</Link></nav><div className="footer-meta"><a className="footer-social" href="https://www.instagram.com/chaiandcity/" target="_blank" rel="noopener noreferrer" aria-label="Instagram"><Instagram size={18} /></a><span>Ražots Latvijā · © 2026</span></div></footer></>; }
 
 createRoot(document.getElementById('root')).render(<HashRouter><CartProvider><App /></CartProvider></HashRouter>);

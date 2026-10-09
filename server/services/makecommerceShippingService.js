@@ -2,6 +2,12 @@ import { config } from '../config.js';
 
 const CACHE_MS = 6 * 60 * 60 * 1000;
 const cache = new Map();
+const shippingAppInfo = Buffer.from(JSON.stringify({
+  module: 'ChaiAndCity',
+  module_version: '1.0.0',
+  platform: 'Custom',
+  platform_version: '1.0',
+})).toString('base64');
 
 function headers(extra = {}) {
   const { shopId, secretKey, shopInstance } = config.makecommerce;
@@ -10,6 +16,7 @@ function headers(extra = {}) {
     accept: 'application/json',
     'Content-Type': 'application/json',
     'makecommerce-shop-instance': shopInstance,
+    'makecommerce-shipping-appinfo': shippingAppInfo,
     'makecommerce-user-locale': 'en',
     ...extra,
   };
@@ -68,6 +75,13 @@ export function parseOptionId(id) {
 }
 
 export class MakeCommerceShippingService {
+  async connectShop(remoteAddress) {
+    return request('/connect', {
+      method: 'POST',
+      body: JSON.stringify({ REMOTE_ADDR: remoteAddress }),
+    });
+  }
+
   async getShippingOptions(weight, country = config.makecommerce.country) {
     if (!isShippingCountrySupported(country)) throw new Error('Neatbalstīta piegādes valsts.');
     const rates = await cached(`rates:${country}:${weight}`, () => request('/rates', { method: 'POST', body: JSON.stringify({ weight, destination: country }) }));
