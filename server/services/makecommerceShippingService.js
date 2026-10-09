@@ -14,9 +14,32 @@ function headers(extra = {}) {
 }
 
 async function request(path, options = {}) {
+  const method = options.method || 'GET';
   const response = await fetch(`${config.makecommerce.shippingApiUrl}${path}`, { ...options, headers: headers(options.headers) });
-  const body = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(body?.message || `MakeCommerce shipping request failed with ${response.status}.`);
+  const responseText = await response.text();
+  let body;
+  try {
+    body = responseText ? JSON.parse(responseText) : null;
+  } catch {
+    body = null;
+  }
+  if (!response.ok) {
+    const message = typeof body?.message === 'string' ? body.message : 'No provider error message.';
+    const providerErrors = Array.isArray(body?.errors)
+      ? body.errors.map((error) => [error?.code, error?.field, error?.message].filter(Boolean).join(': ')).filter(Boolean).slice(0, 5)
+      : [];
+    const requestId = response.headers.get('x-request-id') || response.headers.get('request-id');
+    console.error('MakeCommerce Shipping API request failed', {
+      method,
+      path,
+      status: response.status,
+      message,
+      errors: providerErrors,
+      requestId,
+    });
+    throw new Error(`MakeCommerce Shipping API ${method} ${path} failed with HTTP ${response.status}: ${message}${requestId ? ` (request ${requestId})` : ''}`);
+  }
+  if (body === null) throw new Error(`MakeCommerce Shipping API ${method} ${path} returned an invalid JSON response.`);
   return body;
 }
 
