@@ -4,7 +4,7 @@ import { HashRouter, Link, Route, Routes, useLocation, useNavigate, useParams, u
 import { ArrowRight, Check, Instagram, Lock, Minus, Plus, ShoppingBag, X } from 'lucide-react';
 import './styles.css';
 import { createPaymentSession } from './services/paymentService';
-import { getParcelLockers, getShippingOptions } from './services/shippingService';
+import { getParcelLockers, getShippingCountries, getShippingOptions } from './services/shippingService';
 import heroImage from './assets/IMG_4472.jpg';
 
 const productImageFiles = import.meta.glob('./assets/products/*.{jpg,jpeg,png,webp,avif,svg}', {
@@ -191,8 +191,8 @@ function ProductDetail() {
 }
 
 function Cart() {
-  const { items, subtotal, change, remove } = useCart(); const navigate = useNavigate(); const shipping = subtotal > 40 || subtotal === 0 ? 0 : 2.99;
-  return <main className="cart-page container"><div className="page-title"><span className="eyebrow">GROZIŅŠ</span><h1>Tavs groziņš</h1></div>{items.length === 0 ? <div className="empty-state"><p>Tavs groziņš šobrīd ir tukšs.</p><Link className="button button-dark" to="/kolekcijas/stihijas">Apskatīt tējas</Link></div> : <div className="cart-layout"><div className="cart-items">{items.map((item) => <div className="cart-item" key={item.id}><img src={item.image} alt="" /><div className="cart-item-info"><span className="eyebrow">{item.collection}</span><h3>{item.name}</h3><span>{item.price.toFixed(2)} €</span><div className="quantity"><button onClick={() => change(item.id, -1)} aria-label="Samazināt daudzumu"><Minus size={14} /></button><span>{item.quantity}</span><button onClick={() => change(item.id, 1)} aria-label="Palielināt daudzumu"><Plus size={14} /></button></div></div><button className="remove-button" onClick={() => remove(item.id)} aria-label={`Noņemt ${item.name}`}><X size={16} /></button></div>)}</div><aside className="summary"><span className="eyebrow">PASŪTĪJUMA KOPSAVILKUMS</span><div><span>Preces</span><span>{subtotal.toFixed(2)} €</span></div><div><span>Piegāde</span><span>{shipping ? `${shipping.toFixed(2)} €` : 'Bezmaksas'}</span></div><div className="summary-total"><b>Kopā</b><b>{(subtotal + shipping).toFixed(2)} €</b></div><button className="button button-dark full-width" onClick={() => navigate('/checkout')}>Noformēt pasūtījumu <ArrowRight size={16} /></button><small>Bezmaksas piegāde pasūtījumiem virs 40 €.</small></aside></div>}</main>;
+  const { items, subtotal, change, remove } = useCart(); const navigate = useNavigate(); const freeShipping = subtotal > 40;
+  return <main className="cart-page container"><div className="page-title"><span className="eyebrow">GROZIŅŠ</span><h1>Tavs groziņš</h1></div>{items.length === 0 ? <div className="empty-state"><p>Tavs groziņš šobrīd ir tukšs.</p><Link className="button button-dark" to="/kolekcijas/stihijas">Apskatīt tējas</Link></div> : <div className="cart-layout"><div className="cart-items">{items.map((item) => <div className="cart-item" key={item.id}><img src={item.image} alt="" /><div className="cart-item-info"><span className="eyebrow">{item.collection}</span><h3>{item.name}</h3><span>{item.price.toFixed(2)} €</span><div className="quantity"><button onClick={() => change(item.id, -1)} aria-label="Samazināt daudzumu"><Minus size={14} /></button><span>{item.quantity}</span><button onClick={() => change(item.id, 1)} aria-label="Palielināt daudzumu"><Plus size={14} /></button></div></div><button className="remove-button" onClick={() => remove(item.id)} aria-label={`Noņemt ${item.name}`}><X size={16} /></button></div>)}</div><aside className="summary"><span className="eyebrow">PASŪTĪJUMA KOPSAVILKUMS</span><div><span>Preces</span><span>{subtotal.toFixed(2)} €</span></div><div><span>Piegāde</span><span>{freeShipping ? 'Bezmaksas' : 'Tiks aprēķināta'}</span></div><div className="summary-total"><b>{freeShipping ? 'Kopā' : 'Kopā bez piegādes'}</b><b>{subtotal.toFixed(2)} €</b></div><button className="button button-dark full-width" onClick={() => navigate('/checkout')}>Noformēt pasūtījumu <ArrowRight size={16} /></button><small>{freeShipping ? 'Bezmaksas piegāde.' : 'Piegādes maksa tiks parādīta noformēšanas laikā.'} Bezmaksas piegāde pasūtījumiem virs 40 €.</small></aside></div>}</main>;
 }
 
 const merchant = {
@@ -277,54 +277,96 @@ function Checkout() {
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [countries, setCountries] = useState([]);
+  const [selectedCountry, setSelectedCountry] = useState('');
+  const [loadingCountries, setLoadingCountries] = useState(true);
+  const [loadingShippingOptions, setLoadingShippingOptions] = useState(false);
+  const [loadingLockers, setLoadingLockers] = useState(false);
   const [shippingError, setShippingError] = useState('');
-  const [shippingOptions, setShippingOptions] = useState([
-    { id: 'pakomats', name: 'Pakomāts', price: 2.99 },
-    { id: 'kurjers', name: 'Kurjers', price: 5.9 },
-  ]);
+  const [lockerError, setLockerError] = useState('');
+  const [shippingOptions, setShippingOptions] = useState([]);
   const [lockers, setLockers] = useState([]);
   const [selectedLocker, setSelectedLocker] = useState('');
-  const [deliveryMethod, setDeliveryMethod] = useState('pakomats');
+  const [deliveryMethod, setDeliveryMethod] = useState('');
   const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
   const selectedOption = shippingOptions.find((option) => option.id === deliveryMethod);
   const isPickup = selectedOption?.type ? selectedOption.type === 'pickuppoint' : deliveryMethod === 'pakomats';
   const isCourier = selectedOption?.type ? selectedOption.type === 'courier' : deliveryMethod === 'kurjers';
-  const shipping = subtotal > 40 ? 0 : Number(selectedOption?.price ?? 2.99);
+  const usesLockerPicker = selectedOption?.type === 'pickuppoint';
+  const shipping = subtotal > 40 || !selectedOption ? 0 : Number(selectedOption.price);
   useEffect(() => {
     let active = true;
-    getShippingOptions(itemCount)
+    getShippingCountries()
+      .then((optionsResponse) => {
+        if (!active) return;
+        const availableCountries = Array.isArray(optionsResponse) ? optionsResponse.filter((country) => country?.code && country?.name) : [];
+        setCountries(availableCountries);
+        setSelectedCountry((current) => availableCountries.some((country) => country.code === current) ? current : availableCountries[0]?.code || '');
+        if (!availableCountries.length) setShippingError('Piegādes valstis nav konfigurētas.');
+      })
+      .catch((requestError) => {
+        if (active) setShippingError(requestError.message);
+      })
+      .finally(() => { if (active) setLoadingCountries(false); });
+    return () => { active = false; };
+  }, []);
+  useEffect(() => {
+    if (!selectedCountry) {
+      setShippingOptions([]);
+      setDeliveryMethod('');
+      setLoadingShippingOptions(false);
+      return undefined;
+    }
+    let active = true;
+    setShippingOptions([]);
+    setDeliveryMethod('');
+    setShippingError('');
+    setLoadingShippingOptions(true);
+    getShippingOptions(itemCount, selectedCountry)
       .then((optionsResponse) => {
         if (!active) return;
         const options = Array.isArray(optionsResponse) ? optionsResponse : optionsResponse?.options || optionsResponse?.data || [];
         const availableOptions = options.filter((option) => option?.id && option?.name);
-        if (availableOptions.length) {
-          setShippingOptions(availableOptions);
-          setDeliveryMethod((current) => availableOptions.some((option) => option.id === current) ? current : availableOptions[0].id);
-        }
+        setShippingOptions(availableOptions);
+        setDeliveryMethod(availableOptions[0]?.id || '');
+        if (!availableOptions.length) setShippingError('Šai valstij pašlaik nav pieejamu piegādes veidu.');
       })
       .catch((requestError) => {
         if (active) setShippingError(requestError.message);
-      });
+      })
+      .finally(() => { if (active) setLoadingShippingOptions(false); });
     return () => { active = false; };
-  }, [itemCount]);
+  }, [itemCount, selectedCountry]);
   useEffect(() => {
     setSelectedLocker('');
-    if (!isPickup) { setLockers([]); return undefined; }
+    setLockerError('');
+    if (!usesLockerPicker || loadingShippingOptions || !selectedCountry) {
+      setLockers([]);
+      setLoadingLockers(false);
+      return undefined;
+    }
     let active = true;
     setLockers([]);
-    getParcelLockers(deliveryMethod)
+    setLoadingLockers(true);
+    getParcelLockers(deliveryMethod, selectedCountry)
       .then((lockersResponse) => {
         if (!active) return;
         const lockerList = Array.isArray(lockersResponse) ? lockersResponse : lockersResponse?.lockers || lockersResponse?.data || [];
-        setLockers(lockerList.filter((locker) => locker?.id && (locker.name || locker.label || locker.address)));
+        const availableLockers = lockerList.filter((locker) => locker?.id && (locker.name || locker.label || locker.address));
+        setLockers(availableLockers);
+        if (!availableLockers.length) setLockerError('Šim pārvadātājam šajā valstī nav pieejamu pakomātu.');
       })
       .catch((requestError) => {
-        if (active) setShippingError(requestError.message);
-      });
+        if (active) setLockerError(requestError.message);
+      })
+      .finally(() => { if (active) setLoadingLockers(false); });
     return () => { active = false; };
-  }, [deliveryMethod, isPickup]);
+  }, [deliveryMethod, loadingShippingOptions, selectedCountry, usesLockerPicker]);
   if (!items.length) return <main className="page container empty-state"><h1>Groziņš ir tukšs</h1><Link className="button button-dark" to="/kolekcijas/stihijas">Apskatīt tējas</Link></main>;
   const deliveryOptions = lockers.map((locker) => ({ id: locker.id, label: locker.name || locker.label || locker.address, address: locker.address, city: locker.city }));
+  const selectedDeliveryLocation = deliveryOptions.find((option) => option.id === selectedLocker);
+  const shippingReady = Boolean(selectedCountry && selectedOption && !loadingCountries && !loadingShippingOptions
+    && (!usesLockerPicker || (!loadingLockers && lockers.length > 0 && selectedLocker)));
   const submitOrder = async (event) => {
     event.preventDefault();
     if (submitting) return;
@@ -333,11 +375,22 @@ function Checkout() {
     const form = new FormData(event.currentTarget);
     try {
       const values = Object.fromEntries(form.entries());
-      const address = isCourier ? { street: values.street?.trim(), city: values.city?.trim(), postcode: values.postcode?.trim() } : undefined;
-      const location = address ? `${address.street}, ${address.city}, ${address.postcode}` : values.deliveryLocation;
+      const address = isCourier
+        ? { street: values.street?.trim(), city: values.city?.trim(), postcode: values.postcode?.trim() }
+        : isPickup && selectedDeliveryLocation
+          ? { street: selectedDeliveryLocation.address || selectedDeliveryLocation.label, city: selectedDeliveryLocation.city }
+          : undefined;
+      const location = isCourier ? `${address.street}, ${address.city}, ${address.postcode}` : values.deliveryLocation;
       const payment = await createPaymentSession({
         customer: { firstName: values.firstName, lastName: values.lastName, email: values.email, phone: values.phone },
-        delivery: { method: values.deliveryMethod, location, address, locationLabel: deliveryOptions.find((option) => option.id === values.deliveryLocation)?.label || location, cost: shipping },
+        delivery: {
+          method: values.deliveryMethod,
+          country: values.country,
+          location,
+          address,
+          locationLabel: selectedDeliveryLocation?.label || location,
+          cost: shipping,
+        },
         termsAccepted: values.consentAccepted === 'on',
         privacyAccepted: values.consentAccepted === 'on',
         items: items.map((item) => ({
@@ -354,7 +407,64 @@ function Checkout() {
       setSubmitting(false);
     }
   };
-  return <main className="checkout-page container"><div className="page-title"><span className="eyebrow">NOFORMĒT PASŪTĪJUMU</span><h1>Tava informācija</h1></div>{submitted ? <div className="success-message"><Check size={26} /><h2>Pasūtījums izveidots</h2><p>Maksājuma sesija ir izveidota serverī. Pasūtījums tiks atzīmēts kā apmaksāts tikai pēc droša maksājumu nodrošinātāja apstiprinājuma.</p><Link to="/" className="button button-dark">Atgriezties sākumā</Link></div> : <form className="checkout-layout" onSubmit={submitOrder}><div className="checkout-fields"><fieldset><legend>Kontakti</legend><div className="field-grid"><label>Vārds<input required name="firstName" /></label><label>Uzvārds<input required name="lastName" /></label></div><label>E-pasts<input required type="email" name="email" /></label><label>Tālrunis<input required type="tel" name="phone" /></label></fieldset><fieldset><legend>Piegāde</legend><label>Piegādes metode<select name="deliveryMethod" value={deliveryMethod} onChange={(event) => setDeliveryMethod(event.target.value)}>{shippingOptions.map((option) => <option value={option.id} key={option.id}>{option.name} — {Number(option.price).toFixed(2)} €</option>)}</select></label>{shippingError && <p className="form-error" role="alert">{shippingError}</p>}{isPickup && deliveryOptions.length > 0 ? <LockerSelect options={deliveryOptions} value={selectedLocker} onChange={setSelectedLocker} /> : isCourier ? <><label>Iela, mājas / dzīvokļa nr.<input required name="street" autoComplete="address-line1" /></label><div className="field-grid"><label>Pilsēta / novads<input required name="city" autoComplete="address-level2" /></label><label>Pasta indekss<input required name="postcode" autoComplete="postal-code" placeholder="LV-1001" pattern="([Ll][Vv]-?)?[0-9]{4}" title="Piemēram, LV-1001" /></label></div></> : <label>Pakomāts / piegādes vieta<input required name="deliveryLocation" placeholder="Ievadi piegādes vietu" /></label>}</fieldset><fieldset className="consent-fieldset"><legend>Piekrišana</legend><label className="consent-label"><input required type="checkbox" name="consentAccepted" /> Piekrītu <Link to="/noteikumi" target="_blank">lietošanas noteikumiem</Link> un <Link to="/privatuma-politika" target="_blank">privātuma politikai</Link>.</label></fieldset>{error && <p className="form-error" role="alert">{error}</p>}<button className="button button-dark payment-button" type="submit" disabled={submitting}>Maksāt <ArrowRight size={16} /></button><p className="form-note">Maksājumi tiek apstrādāti MakeCommerce platformā. Norēķinu valūta ir EUR. Karte un maksājumu dati netiek glabāti šajā vietnē.</p></div><aside className="summary"><span className="eyebrow">TAVS PASŪTĪJUMS</span>{items.map((item) => <div className="summary-product" key={item.id}><span>{item.name} × {item.quantity}</span><span>{(item.price * item.quantity).toFixed(2)} €</span></div>)}<div><span>Piegāde</span><span>{shipping.toFixed(2)} €</span></div><div className="summary-total"><b>Kopā</b><b>{(subtotal + shipping).toFixed(2)} €</b></div></aside></form>}{submitting && <div className="loading-overlay" role="alert" aria-busy="true" aria-live="assertive"><div className="spinner" /><p>Notiek pāradresācija uz maksājumu…</p></div>}</main>;
+  return <main className="checkout-page container">
+    <div className="page-title"><span className="eyebrow">NOFORMĒT PASŪTĪJUMU</span><h1>Tava informācija</h1></div>
+    {submitted ? <div className="success-message"><Check size={26} /><h2>Pasūtījums izveidots</h2><p>Maksājuma sesija ir izveidota serverī. Pasūtījums tiks atzīmēts kā apmaksāts tikai pēc droša maksājumu nodrošinātāja apstiprinājuma.</p><Link to="/" className="button button-dark">Atgriezties sākumā</Link></div> : <form className="checkout-layout" onSubmit={submitOrder}>
+      <div className="checkout-fields">
+        <fieldset>
+          <legend>Kontakti</legend>
+          <div className="field-grid"><label>Vārds<input required name="firstName" /></label><label>Uzvārds<input required name="lastName" /></label></div>
+          <label>E-pasts<input required type="email" name="email" /></label>
+          <label>Tālrunis<input required type="tel" name="phone" /></label>
+        </fieldset>
+        <fieldset>
+          <legend>Piegāde</legend>
+          <label>Valsts
+            <select name="country" required value={selectedCountry} disabled={loadingCountries || !countries.length} onChange={(event) => setSelectedCountry(event.target.value)}>
+              {loadingCountries && <option value="">Ielādē valstis…</option>}
+              {!loadingCountries && !countries.length && <option value="">Valstis nav pieejamas</option>}
+              {countries.map((country) => <option key={country.code} value={country.code}>{country.name}</option>)}
+            </select>
+          </label>
+          <label>Piegādes metode
+            <select name="deliveryMethod" required value={deliveryMethod} disabled={loadingCountries || loadingShippingOptions || !shippingOptions.length} onChange={(event) => setDeliveryMethod(event.target.value)}>
+              {loadingCountries || loadingShippingOptions ? <option value="">Ielādē piegādes veidus…</option> : shippingOptions.map((option) => <option value={option.id} key={option.id}>{option.name} — {Number(option.price).toFixed(2)} €</option>)}
+            </select>
+          </label>
+          {shippingError && <p className="form-error" role="alert">{shippingError}</p>}
+          {loadingLockers && <p role="status">Ielādē pakomātus…</p>}
+          {lockerError && <p className="form-error" role="alert">{lockerError}</p>}
+          {usesLockerPicker && deliveryOptions.length > 0
+            ? <LockerSelect options={deliveryOptions} value={selectedLocker} onChange={setSelectedLocker} />
+            : usesLockerPicker
+              ? null
+            : isCourier
+              ? <>
+                <label>Iela, mājas / dzīvokļa nr.<input required name="street" autoComplete="address-line1" /></label>
+                <div className="field-grid">
+                  <label>Pilsēta / novads<input required name="city" autoComplete="address-level2" /></label>
+                  <label>Pasta indekss<input required name="postcode" autoComplete="postal-code" placeholder="Pasta indekss" pattern="[\p{L}0-9][\p{L}0-9 -]{1,11}" title="Ievadi derīgu pasta indeksu" /></label>
+                </div>
+              </>
+              : !isPickup && selectedOption && <label>Pakomāts / piegādes vieta<input required name="deliveryLocation" placeholder="Ievadi piegādes vietu" /></label>}
+        </fieldset>
+        <fieldset className="consent-fieldset">
+          <legend>Piekrišana</legend>
+          <label className="consent-label"><input required type="checkbox" name="consentAccepted" /> Piekrītu <Link to="/noteikumi" target="_blank">lietošanas noteikumiem</Link> un <Link to="/privatuma-politika" target="_blank">privātuma politikai</Link>.</label>
+        </fieldset>
+        {error && <p className="form-error" role="alert">{error}</p>}
+        <button className="button button-dark payment-button" type="submit" disabled={submitting || !shippingReady}>Maksāt <ArrowRight size={16} /></button>
+        <p className="form-note">Maksājumi tiek apstrādāti MakeCommerce platformā. Norēķinu valūta ir EUR. Karte un maksājumu dati netiek glabāti šajā vietnē.</p>
+      </div>
+      <aside className="summary">
+        <span className="eyebrow">TAVS PASŪTĪJUMS</span>
+        {items.map((item) => <div className="summary-product" key={item.id}><span>{item.name} × {item.quantity}</span><span>{(item.price * item.quantity).toFixed(2)} €</span></div>)}
+        <div><span>Piegāde</span><span>{shipping.toFixed(2)} €</span></div>
+        <div className="summary-total"><b>Kopā</b><b>{(subtotal + shipping).toFixed(2)} €</b></div>
+      </aside>
+    </form>}
+    {submitting && <div className="loading-overlay" role="alert" aria-busy="true" aria-live="assertive"><div className="spinner" /><p>Notiek pāradresācija uz maksājumu…</p></div>}
+  </main>;
 }
 
 function PaymentResult() {

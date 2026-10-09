@@ -26,7 +26,7 @@ export function verifyMac(json, mac) {
 }
 
 export class MakeCommerceService {
-  async createTransaction({ orderId, amount, customer, ip, locale }) {
+  async createTransaction({ orderId, amount, customer, ip, country, locale }) {
     const { shopId, secretKey, apiUrl, publicApiUrl } = config.makecommerce;
     const callback = (path) => ({ url: `${publicApiUrl}${path}`, method: 'POST' });
     const response = await fetch(`${apiUrl}/v1/transactions`, {
@@ -47,7 +47,7 @@ export class MakeCommerceService {
             notification_url: callback('/api/webhooks/makecommerce'),
           },
         },
-        customer: { email: customer.email, ip: String(ip || '').replace(/^::ffff:/, ''), country: 'lv', locale },
+        customer: { email: customer.email, ip: String(ip || '').replace(/^::ffff:/, ''), country: country || customer.country || 'lv', locale },
         app_info: { module: 'ChaiAndCity', module_version: '1.0.0', platform: 'Custom', platform_version: '1.0' },
       }),
     });

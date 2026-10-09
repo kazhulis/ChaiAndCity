@@ -32,6 +32,10 @@ export function isShippingEnabled() {
   return config.makecommerce.enabled && config.makecommerce.shippingEnabled;
 }
 
+export function isShippingCountrySupported(country) {
+  return typeof country === 'string' && config.makecommerce.shippingCountries.includes(country);
+}
+
 // Option ids look like "pickuppoint:omniva" or "courier:dpd".
 export function parseOptionId(id) {
   const [type, carrier] = String(id).split(':');
@@ -39,8 +43,8 @@ export function parseOptionId(id) {
 }
 
 export class MakeCommerceShippingService {
-  async getShippingOptions(weight) {
-    const { country } = config.makecommerce;
+  async getShippingOptions(weight, country = config.makecommerce.country) {
+    if (!isShippingCountrySupported(country)) throw new Error('Neatbalstīta piegādes valsts.');
     const rates = await cached(`rates:${country}:${weight}`, () => request('/rates', { method: 'POST', body: JSON.stringify({ weight, destination: country }) }));
     return ['pickuppoint', 'courier'].flatMap((type) => (rates?.[type] || []).map((rate) => ({
       id: `${type}:${rate.carrier}`,
@@ -52,14 +56,14 @@ export class MakeCommerceShippingService {
     })));
   }
 
-  async getPickupPoints(carrier) {
+  async getPickupPoints(carrier, country = config.makecommerce.country) {
     if (!/^[a-z0-9_-]+$/i.test(carrier || '')) throw new Error('Nederīgs pārvadātājs.');
-    const { country } = config.makecommerce;
+    if (!isShippingCountrySupported(country)) throw new Error('Neatbalstīta piegādes valsts.');
     const points = await cached(`points:${country}:${carrier}`, () => request(`/pickuppoint/${country.toLowerCase()}`, { headers: { 'makecommerce-carrier': carrier } }));
     return (points || []).map((point) => ({
       id: String(point.id),
       name: point.name,
-      address: [point.address, point.city].filter(Boolean).join(', '),
+      address: point.address,
       city: point.city,
     }));
   }

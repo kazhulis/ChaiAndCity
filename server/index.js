@@ -5,7 +5,7 @@ import { assertProductionConfig, config } from './config.js';
 import { ValidationError } from './errors.js';
 import { rateLimit } from './rateLimit.js';
 import { MakeCommerceService, calculateTotal, verifyMac } from './services/makecommerceService.js';
-import { MakeCommerceShippingService, isShippingEnabled, parseOptionId } from './services/makecommerceShippingService.js';
+import { MakeCommerceShippingService, isShippingCountrySupported, isShippingEnabled, parseOptionId } from './services/makecommerceShippingService.js';
 import { SwotzyService } from './services/swotzyService.js';
 import { WooCommerceService } from './services/woocommerceService.js';
 import { getOrder, saveOrder, updateOrder } from './store.js';
@@ -38,27 +38,20 @@ app.get('/api/health', (_request, response) => response.json({ ok: true, environ
 
 const mcShipping = new MakeCommerceShippingService();
 
-const FALLBACK_OPTIONS = [
-  { id: 'pickuppoint:omniva', type: 'pickuppoint', carrier: 'omniva', name: 'Omniva pakomāts', price: 2.99 },
-  { id: 'pickuppoint:dpd', type: 'pickuppoint', carrier: 'dpd', name: 'DPD pakomāts', price: 2.99 },
-  { id: 'courier:dpd', type: 'courier', carrier: 'dpd', name: 'DPD kurjers', price: 5.9 },
-];
-
-async function loadShippingOptions(itemCount = 1) {
+async function loadShippingOptions(itemCount = 1, country = config.makecommerce.country) {
+  if (!isShippingCountrySupported(country)) throw new ValidationError('Neatbalstīta piegādes valsts.');
   if (!isShippingEnabled()) return swotzy.getShippingOptions();
   const count = Math.max(1, Math.min(Number.parseInt(itemCount, 10) || 1, 100));
-  try {
-    const options = await mcShipping.getShippingOptions(count * config.makecommerce.itemWeightGrams);
-    if (options.length) return options;
-    console.warn('MakeCommerce returned no shipping rates; complete the Shipping setup. Using fallback options.');
-  } catch (error) {
-    console.error('MakeCommerce rates failed; using fallback options:', error.message);
-  }
-  return FALLBACK_OPTIONS;
+  return mcShipping.getShippingOptions(count * config.makecommerce.itemWeightGrams, country);
 }
 
+app.get('/api/shipping/countries', (_request, response) => {
+  const displayNames = new Intl.DisplayNames(['lv'], { type: 'region' });
+  response.json(config.makecommerce.shippingCountries.map((code) => ({ code, name: displayNames.of(code) || code })));
+});
+
 app.get('/api/shipping/options', async (request, response, next) => {
-  try { response.json(await loadShippingOptions(request.query.items)); } catch (error) { next(error); }
+  try { response.json(await loadShippingOptions(request.query.items, request.query.country)); } catch (error) { next(error); }
 });
 
 app.get('/api/shipping/lockers', async (request, response, next) => {
@@ -66,7 +59,8 @@ app.get('/api/shipping/lockers', async (request, response, next) => {
     if (!isShippingEnabled()) return response.json(await swotzy.getParcelLockers());
     const { type, carrier } = parseOptionId(request.query.method);
     if (type !== 'pickuppoint') return response.json([]);
-    response.json(await mcShipping.getPickupPoints(carrier));
+    if (!isShippingCountrySupported(request.query.country)) throw new ValidationError('Neatbalstīta piegādes valsts.');
+    response.json(await mcShipping.getPickupPoints(carrier, request.query.country));
   } catch (error) { next(error); }
 });
 
@@ -76,7 +70,7 @@ app.post('/api/payments/sessions', checkoutLimiter, async (request, response, ne
     const consentAcceptedAt = new Date().toISOString();
     const itemCount = request.body.items.reduce((sum, item) => sum + item.quantity, 0);
     // Price and shipping are always computed server-side; client-supplied amounts are ignored.
-    const { shipping, total } = calculateTotal(request.body, await loadShippingOptions(itemCount));
+    const { shipping, total } = calculateTotal(request.body, await loadShippingOptions(itemCount, request.body.delivery.country));
     const orderRequest = { ...request.body, delivery: { ...request.body.delivery, cost: shipping }, consentAcceptedAt };
     const wooOrder = await woocommerce.createOrder(orderRequest);
     if (wooOrder.total !== undefined && Math.abs(Number(wooOrder.total) - total) > 0.01) {
@@ -103,6 +97,7 @@ app.post('/api/payments/sessions', checkoutLimiter, async (request, response, ne
         amount: total,
         customer: orderRequest.customer,
         ip: request.ip,
+        country: orderRequest.delivery.country.toLowerCase(),
         locale: 'lv',
       });
       updateOrder(order.id, { paymentUrl: transaction.paymentUrl, transactionId: transaction.transactionId, amount: total });
@@ -149,8 +144,9 @@ app.post('/api/webhooks/woocommerce', async (request, response, next) => {
 async function markPaid(orderId) {
   const order = getOrder(orderId);
   if (!order || order.paymentStatus === 'paid') return;
-  updateOrder(orderId, { status: 'processing', paymentStatus: 'paid' });
+  // Update WooCommerce first so a failed call can be retried by the next MakeCommerce notification.
   await woocommerce.markPaid(orderId);
+  updateOrder(orderId, { status: 'processing', paymentStatus: 'paid' });
   if (order.shippingStatus === 'not_created') {
     const shipment = await swotzy.createShipment(getOrder(orderId));
     updateOrder(orderId, { shippingStatus: shipment.status, swotzyShipmentId: shipment.shipmentId });

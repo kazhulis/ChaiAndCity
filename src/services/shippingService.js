@@ -10,10 +10,14 @@ async function get(path, params = {}) {
   return body;
 }
 
-export function getShippingOptions(items) {
-  return get('options', { items });
+export function getShippingCountries() {
+  return get('countries');
 }
 
-export function getParcelLockers(method) {
-  return get('lockers', { method });
+export function getShippingOptions(items, country) {
+  return get('options', { items, country });
+}
+
+export function getParcelLockers(method, country) {
+  return get('lockers', { method, country });
 }

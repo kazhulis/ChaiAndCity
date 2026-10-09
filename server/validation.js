@@ -1,4 +1,5 @@
 import { ValidationError } from './errors.js';
+import { isShippingCountrySupported } from './services/makecommerceShippingService.js';
 
 export function validateOrder(input) {
   if (!input || !input.customer || !input.delivery || !Array.isArray(input.items) || input.items.length === 0) {
@@ -12,12 +13,15 @@ export function validateOrder(input) {
   if (typeof input.delivery.method !== 'string' || typeof input.delivery.location !== 'string' || !input.delivery.location.trim()) {
     throw new ValidationError('Izvēlies piegādes veidu un vietu.');
   }
+  if (!isShippingCountrySupported(input.delivery.country)) {
+    throw new ValidationError('Izvēlies piegādes valsti, uz kuru tiek nodrošināta piegāde.');
+  }
   if (input.delivery.method.startsWith('courier') || input.delivery.method === 'kurjers') {
     const address = input.delivery.address;
     if (!address || ['street', 'city', 'postcode'].some((field) => typeof address[field] !== 'string' || !address[field].trim())) {
       throw new ValidationError('Lūdzu, norādi kurjera piegādes adresi: iela, pilsēta un pasta indekss.');
     }
-    if (!/^(LV-?)?\d{4}$/i.test(address.postcode.trim())) throw new ValidationError('Nederīgs pasta indekss.');
+    if (!/^[\p{L}\d][\p{L}\d -]{1,11}$/u.test(address.postcode.trim())) throw new ValidationError('Nederīgs pasta indekss.');
   }
   if (input.termsAccepted !== true || input.privacyAccepted !== true) {
     throw new ValidationError('Lai turpinātu, jāpiekrīt lietošanas noteikumiem un privātuma politikai.');
