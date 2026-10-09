@@ -7,8 +7,10 @@ function headers(extra = {}) {
   const { shopId, secretKey, shopInstance } = config.makecommerce;
   return {
     Authorization: `Basic ${Buffer.from(`${shopId}:${secretKey}`).toString('base64')}`,
+    accept: 'application/json',
     'Content-Type': 'application/json',
     'makecommerce-shop-instance': shopInstance,
+    'makecommerce-user-locale': 'en',
     ...extra,
   };
 }
