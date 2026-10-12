@@ -70,20 +70,20 @@ function CartProvider({ children }) {
     getProductPrices().then((data) => { if (!cancelled) setPrices(data); }).catch(() => { if (!cancelled) setPricesFailed(true); });
     return () => { cancelled = true; };
   }, []);
-  const products = useMemo(() => baseProducts.map((product) => ({ ...product, price: prices?.[product.woocommerceId] ?? null })), [prices]);
+  const products = useMemo(() => baseProducts.map((product) => ({ ...product, price: prices?.[product.woocommerceId]?.price ?? null, regularPrice: prices?.[product.woocommerceId]?.regularPrice ?? null })), [prices]);
   const [rawItems, setItems] = useState(() => {
     try {
       const storedItems = JSON.parse(localStorage.getItem('chai-cart')) || [];
-      return storedItems.map(({ price, ...item }) => ({
+      return storedItems.map(({ price, regularPrice, ...item }) => ({
         ...item,
         woocommerceId: item.woocommerceId ?? baseProducts.find((product) => product.id === item.id)?.woocommerceId,
       }));
     } catch { return []; }
   });
   useEffect(() => localStorage.setItem('chai-cart', JSON.stringify(rawItems)), [rawItems]);
-  const items = useMemo(() => rawItems.map((item) => ({ ...item, price: prices?.[item.woocommerceId] ?? null })), [rawItems, prices]);
+  const items = useMemo(() => rawItems.map((item) => ({ ...item, price: prices?.[item.woocommerceId]?.price ?? null, regularPrice: prices?.[item.woocommerceId]?.regularPrice ?? null })), [rawItems, prices]);
   const add = (product, quantity = 1) => setItems((current) => {
-    const { price, ...rest } = product;
+    const { price, regularPrice, ...rest } = product;
     const found = current.find((item) => item.id === product.id);
     return found ? current.map((item) => item.id === product.id ? { ...item, quantity: item.quantity + quantity } : item) : [...current, { ...rest, quantity }];
   });
@@ -98,6 +98,11 @@ const useCart = () => useContext(CartContext);
 
 const formatPrice = (price) => price === null || price === undefined ? null : `${price.toFixed(2)} €`;
 const PRICE_UNAVAILABLE = 'Cena īslaicīgi nav pieejama';
+function PriceTag({ item }) {
+  if (item.price === null) return PRICE_UNAVAILABLE;
+  if (!item.regularPrice) return formatPrice(item.price);
+  return <><s className="price-old">{formatPrice(item.regularPrice)}</s> <span className="price-sale">{formatPrice(item.price)}</span></>;
+}
 function PriceUnavailableNotice() {
   return <p className="price-notice" role="status">Cenas īslaicīgi nav pieejamas. Lūdzu, mēģini vēlreiz pēc brīža.</p>;
 }
@@ -128,7 +133,7 @@ function AddButton({ product, quantity = 1 }) {
 function ProductCard({ product }) {
   return <article className="product-card">
     <Link to={`/produkti/${product.id}`} className="product-image-wrap"><img src={product.image} alt={`${product.name} tējas iepakojums`} /></Link>
-    <div className="product-meta"><div><span className="eyebrow">{product.collection}</span><h3>{product.name}</h3></div><span className="price">{formatPrice(product.price) ?? PRICE_UNAVAILABLE}</span></div>
+    <div className="product-meta"><div><span className="eyebrow">{product.collection}</span><h3>{product.name}</h3></div><span className="price"><PriceTag item={product} /></span></div>
     <AddButton product={product} />
   </article>;
 }
@@ -202,12 +207,12 @@ function ElementsCollection() {
 
 function ProductDetail() {
   const { id } = useParams(); const { products, pricesReady, pricesLoading } = useCart(); const product = products.find((item) => item.id === id) || products[0]; const [quantity, setQuantity] = useState(1);
-  return <main className="detail-page container"><div className="detail-image"><img src={product.image} alt={`${product.name} tējas iepakojums`} /></div><div className="detail-copy"><span className="eyebrow">{product.collection}</span><h1>{product.name}</h1><div className="detail-price">{formatPrice(product.price) ?? PRICE_UNAVAILABLE}</div>{!pricesReady && !pricesLoading && <PriceUnavailableNotice />}<p className="detail-description">{product.description}</p><div className="detail-info"><div><span className="eyebrow">SASTĀVS</span><p>{product.ingredients}</p></div><div><span className="eyebrow">IEPAKOJUMS</span><p>50 g · aptuveni 25 krūzēm</p></div></div><div className="purchase-row"><div className="quantity"><button onClick={() => setQuantity(Math.max(1, quantity - 1))} aria-label="Samazināt daudzumu"><Minus size={15} /></button><span>{quantity}</span><button onClick={() => setQuantity(quantity + 1)} aria-label="Palielināt daudzumu"><Plus size={15} /></button></div><AddButton product={product} quantity={quantity} /></div></div><div className="related"><div className="section-heading"><span className="eyebrow">VARĒTU PATIKT ARĪ</span><span className="line" /></div><div className="product-grid">{products.filter((item) => item.id !== product.id).slice(0, 3).map((item) => <ProductCard product={item} key={item.id} />)}</div></div></main>;
+  return <main className="detail-page container"><div className="detail-image"><img src={product.image} alt={`${product.name} tējas iepakojums`} /></div><div className="detail-copy"><span className="eyebrow">{product.collection}</span><h1>{product.name}</h1><div className="detail-price"><PriceTag item={product} /></div>{!pricesReady && !pricesLoading && <PriceUnavailableNotice />}<p className="detail-description">{product.description}</p><div className="detail-info"><div><span className="eyebrow">SASTĀVS</span><p>{product.ingredients}</p></div><div><span className="eyebrow">IEPAKOJUMS</span><p>50 g · aptuveni 25 krūzēm</p></div></div><div className="purchase-row"><div className="quantity"><button onClick={() => setQuantity(Math.max(1, quantity - 1))} aria-label="Samazināt daudzumu"><Minus size={15} /></button><span>{quantity}</span><button onClick={() => setQuantity(quantity + 1)} aria-label="Palielināt daudzumu"><Plus size={15} /></button></div><AddButton product={product} quantity={quantity} /></div></div><div className="related"><div className="section-heading"><span className="eyebrow">VARĒTU PATIKT ARĪ</span><span className="line" /></div><div className="product-grid">{products.filter((item) => item.id !== product.id).slice(0, 3).map((item) => <ProductCard product={item} key={item.id} />)}</div></div></main>;
 }
 
 function Cart() {
   const { items, subtotal, change, remove, pricesReady } = useCart(); const navigate = useNavigate(); const freeShipping = pricesReady && subtotal > 40;
-  return <main className="cart-page container"><div className="page-title"><span className="eyebrow">GROZIŅŠ</span><h1>Tavs groziņš</h1></div>{items.length === 0 ? <div className="empty-state"><p>Tavs groziņš šobrīd ir tukšs.</p><Link className="button button-dark" to="/kolekcijas/stihijas">Apskatīt tējas</Link></div> : <div className="cart-layout"><div className="cart-items">{items.map((item) => <div className="cart-item" key={item.id}><img src={item.image} alt="" /><div className="cart-item-info"><span className="eyebrow">{item.collection}</span><h3>{item.name}</h3><span>{formatPrice(item.price) ?? PRICE_UNAVAILABLE}</span><div className="quantity"><button onClick={() => change(item.id, -1)} aria-label="Samazināt daudzumu"><Minus size={14} /></button><span>{item.quantity}</span><button onClick={() => change(item.id, 1)} aria-label="Palielināt daudzumu"><Plus size={14} /></button></div></div><button className="remove-button" onClick={() => remove(item.id)} aria-label={`Noņemt ${item.name}`}><X size={16} /></button></div>)}</div><aside className="summary"><span className="eyebrow">PASŪTĪJUMA KOPSAVILKUMS</span><div><span>Preces</span><span>{pricesReady ? `${subtotal.toFixed(2)} €` : '—'}</span></div><div><span>Piegāde</span><span>{freeShipping ? 'Bezmaksas' : 'Tiks aprēķināta'}</span></div><div className="summary-total"><b>{freeShipping ? 'Kopā' : 'Kopā bez piegādes'}</b><b>{pricesReady ? `${subtotal.toFixed(2)} €` : '—'}</b></div>{!pricesReady && <PriceUnavailableNotice />}<button className="button button-dark full-width" disabled={!pricesReady} onClick={() => navigate('/checkout')}>Noformēt pasūtījumu <ArrowRight size={16} /></button><small>{freeShipping ? 'Bezmaksas piegāde.' : 'Piegādes maksa tiks parādīta noformēšanas laikā.'} Bezmaksas piegāde pasūtījumiem virs 40 €.</small></aside></div>}</main>;
+  return <main className="cart-page container"><div className="page-title"><span className="eyebrow">GROZIŅŠ</span><h1>Tavs groziņš</h1></div>{items.length === 0 ? <div className="empty-state"><p>Tavs groziņš šobrīd ir tukšs.</p><Link className="button button-dark" to="/kolekcijas/stihijas">Apskatīt tējas</Link></div> : <div className="cart-layout"><div className="cart-items">{items.map((item) => <div className="cart-item" key={item.id}><img src={item.image} alt="" /><div className="cart-item-info"><span className="eyebrow">{item.collection}</span><h3>{item.name}</h3><span><PriceTag item={item} /></span><div className="quantity"><button onClick={() => change(item.id, -1)} aria-label="Samazināt daudzumu"><Minus size={14} /></button><span>{item.quantity}</span><button onClick={() => change(item.id, 1)} aria-label="Palielināt daudzumu"><Plus size={14} /></button></div></div><button className="remove-button" onClick={() => remove(item.id)} aria-label={`Noņemt ${item.name}`}><X size={16} /></button></div>)}</div><aside className="summary"><span className="eyebrow">PASŪTĪJUMA KOPSAVILKUMS</span><div><span>Preces</span><span>{pricesReady ? `${subtotal.toFixed(2)} €` : '—'}</span></div><div><span>Piegāde</span><span>{freeShipping ? 'Bezmaksas' : 'Tiks aprēķināta'}</span></div><div className="summary-total"><b>{freeShipping ? 'Kopā' : 'Kopā bez piegādes'}</b><b>{pricesReady ? `${subtotal.toFixed(2)} €` : '—'}</b></div>{!pricesReady && <PriceUnavailableNotice />}<button className="button button-dark full-width" disabled={!pricesReady} onClick={() => navigate('/checkout')}>Noformēt pasūtījumu <ArrowRight size={16} /></button><small>{freeShipping ? 'Bezmaksas piegāde.' : 'Piegādes maksa tiks parādīta noformēšanas laikā.'} Bezmaksas piegāde pasūtījumiem virs 40 €.</small></aside></div>}</main>;
 }
 
 const merchant = {

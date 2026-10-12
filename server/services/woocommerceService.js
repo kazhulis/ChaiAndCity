@@ -37,23 +37,30 @@ async function request(path, options = {}) {
   return body;
 }
 
-const MOCK_PRICES = { 21: 12, 20: 12, 22: 12, 13: 12 };
+const MOCK_PRICES = Object.fromEntries([21, 20, 22, 13].map((id) => [id, { price: 12, regularPrice: null }]));
 const PRICE_CACHE_MS = 60_000;
 let priceCache = { at: 0, prices: null };
 
 export class WooCommerceService {
-  // Returns { [productId]: activePrice } straight from WooCommerce (sale prices included).
-  async getPrices() {
+  // Returns { [productId]: { price, regularPrice } }; regularPrice is set only while the product is on sale.
+  async getPriceDetails() {
     if (!config.woocommerce.enabled) return MOCK_PRICES;
     if (priceCache.prices && Date.now() - priceCache.at < PRICE_CACHE_MS) return priceCache.prices;
     const products = await request('/products?per_page=100&status=publish');
     const prices = {};
     for (const product of products) {
       const price = Number.parseFloat(product.price);
-      if (Number.isFinite(price)) prices[product.id] = price;
+      if (!Number.isFinite(price)) continue;
+      const regular = Number.parseFloat(product.regular_price);
+      prices[product.id] = { price, regularPrice: product.on_sale && regular > price ? regular : null };
     }
     priceCache = { at: Date.now(), prices };
     return prices;
+  }
+
+  async getPrices() {
+    const details = await this.getPriceDetails();
+    return Object.fromEntries(Object.entries(details).map(([id, { price }]) => [id, price]));
   }
 
   async createOrder(order) {

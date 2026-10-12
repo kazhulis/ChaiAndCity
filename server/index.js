@@ -37,7 +37,7 @@ app.use('/api/orders', readLimiter);
 app.use('/api/products', readLimiter);
 
 app.get('/api/products/prices', async (_request, response, next) => {
-  try { response.json(await woocommerce.getPrices()); } catch (error) { next(error); }
+  try { response.json(await woocommerce.getPriceDetails()); } catch (error) { next(error); }
 });
 
 app.get('/api/health', (_request, response) => response.json({ ok: true, environment: config.nodeEnv }));
