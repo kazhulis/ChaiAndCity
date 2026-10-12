@@ -33,7 +33,25 @@ async function request(path, options = {}) {
   return body;
 }
 
+const MOCK_PRICES = { 21: 12, 20: 12, 22: 12, 13: 12 };
+const PRICE_CACHE_MS = 60_000;
+let priceCache = { at: 0, prices: null };
+
 export class WooCommerceService {
+  // Returns { [productId]: activePrice } straight from WooCommerce (sale prices included).
+  async getPrices() {
+    if (!config.woocommerce.enabled) return MOCK_PRICES;
+    if (priceCache.prices && Date.now() - priceCache.at < PRICE_CACHE_MS) return priceCache.prices;
+    const products = await request('/products?per_page=100&status=publish');
+    const prices = {};
+    for (const product of products) {
+      const price = Number.parseFloat(product.price);
+      if (Number.isFinite(price)) prices[product.id] = price;
+    }
+    priceCache = { at: Date.now(), prices };
+    return prices;
+  }
+
   async createOrder(order) {
     if (!config.woocommerce.enabled) {
       return { id: `mock-${Date.now()}`, status: 'pending', payment_url: null };

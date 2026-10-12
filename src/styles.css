@@ -1388,3 +1388,6 @@ button {
 
 .site-footer .footer-social { display: inline-flex; color: var(--ink); text-decoration: none; }
 .site-footer .footer-social:hover { opacity: 0.6; }
+
+.price-notice { margin: 0 0 1.5rem; padding: .8rem 1rem; border: 1px solid currentColor; font-size: .9rem; }
+.button:disabled { opacity: .5; cursor: not-allowed; }

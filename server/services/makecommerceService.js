@@ -2,12 +2,11 @@ import crypto from 'node:crypto';
 import { config } from '../config.js';
 import { ValidationError } from '../errors.js';
 
-const PRODUCT_PRICES = { 21: 12, 20: 12, 22: 12, 13: 12 };
 const FREE_SHIPPING_OVER = 40;
 
-export function calculateTotal(order, shippingOptions) {
+export function calculateTotal(order, shippingOptions, productPrices) {
   const subtotal = order.items.reduce((sum, item) => {
-    const price = PRODUCT_PRICES[item.productId];
+    const price = productPrices[item.productId];
     if (price === undefined) throw new ValidationError('Pasūtījumā ir nezināma prece.');
     return sum + price * item.quantity;
   }, 0);

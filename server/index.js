@@ -34,6 +34,11 @@ const checkoutLimiter = rateLimit({ windowMs: 10 * 60_000, max: 15 });
 const shippingSetupLimiter = rateLimit({ windowMs: 60 * 60_000, max: 5 });
 app.use('/api/shipping', readLimiter);
 app.use('/api/orders', readLimiter);
+app.use('/api/products', readLimiter);
+
+app.get('/api/products/prices', async (_request, response, next) => {
+  try { response.json(await woocommerce.getPrices()); } catch (error) { next(error); }
+});
 
 app.get('/api/health', (_request, response) => response.json({ ok: true, environment: config.nodeEnv }));
 
@@ -100,7 +105,7 @@ app.post('/api/payments/sessions', checkoutLimiter, async (request, response, ne
     const consentAcceptedAt = new Date().toISOString();
     const itemCount = request.body.items.reduce((sum, item) => sum + item.quantity, 0);
     // Price and shipping are always computed server-side; client-supplied amounts are ignored.
-    const { shipping, total } = calculateTotal(request.body, await loadShippingOptions(itemCount, request.body.delivery.country));
+    const { shipping, total } = calculateTotal(request.body, await loadShippingOptions(itemCount, request.body.delivery.country), await woocommerce.getPrices());
     const orderRequest = { ...request.body, delivery: { ...request.body.delivery, cost: shipping }, consentAcceptedAt };
     const wooOrder = await woocommerce.createOrder(orderRequest);
     if (wooOrder.total !== undefined && Math.abs(Number(wooOrder.total) - total) > 0.01) {
