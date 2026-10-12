@@ -105,6 +105,10 @@ app.post('/api/payments/sessions', checkoutLimiter, async (request, response, ne
     const consentAcceptedAt = new Date().toISOString();
     const itemCount = request.body.items.reduce((sum, item) => sum + item.quantity, 0);
     // Price and shipping are always computed server-side; client-supplied amounts are ignored.
+    const priceDetails = await woocommerce.getPriceDetails();
+    if (request.body.items.some((item) => priceDetails[item.productId]?.inStock === false)) {
+      throw new ValidationError('Kāda no precēm vairs nav noliktavā.');
+    }
     const { shipping, total } = calculateTotal(request.body, await loadShippingOptions(itemCount, request.body.delivery.country), await woocommerce.getPrices());
     const orderRequest = { ...request.body, delivery: { ...request.body.delivery, cost: shipping }, consentAcceptedAt };
     const wooOrder = await woocommerce.createOrder(orderRequest);

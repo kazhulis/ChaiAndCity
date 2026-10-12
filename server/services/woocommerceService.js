@@ -37,7 +37,7 @@ async function request(path, options = {}) {
   return body;
 }
 
-const MOCK_PRICES = Object.fromEntries([21, 20, 22, 13].map((id) => [id, { price: 12, regularPrice: null }]));
+const MOCK_PRICES = Object.fromEntries([21, 20, 22, 13].map((id) => [id, { price: 12, regularPrice: null, inStock: true }]));
 const PRICE_CACHE_MS = 60_000;
 let priceCache = { at: 0, prices: null };
 
@@ -52,7 +52,7 @@ export class WooCommerceService {
       const price = Number.parseFloat(product.price);
       if (!Number.isFinite(price)) continue;
       const regular = Number.parseFloat(product.regular_price);
-      prices[product.id] = { price, regularPrice: product.on_sale && regular > price ? regular : null };
+      prices[product.id] = { price, regularPrice: product.on_sale && regular > price ? regular : null, inStock: product.stock_status !== 'outofstock' };
     }
     priceCache = { at: Date.now(), prices };
     return prices;

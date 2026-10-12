@@ -70,20 +70,20 @@ function CartProvider({ children }) {
     getProductPrices().then((data) => { if (!cancelled) setPrices(data); }).catch(() => { if (!cancelled) setPricesFailed(true); });
     return () => { cancelled = true; };
   }, []);
-  const products = useMemo(() => baseProducts.map((product) => ({ ...product, price: prices?.[product.woocommerceId]?.price ?? null, regularPrice: prices?.[product.woocommerceId]?.regularPrice ?? null })), [prices]);
+  const products = useMemo(() => baseProducts.map((product) => ({ ...product, price: prices?.[product.woocommerceId]?.price ?? null, regularPrice: prices?.[product.woocommerceId]?.regularPrice ?? null, inStock: prices?.[product.woocommerceId]?.inStock !== false })), [prices]);
   const [rawItems, setItems] = useState(() => {
     try {
       const storedItems = JSON.parse(localStorage.getItem('chai-cart')) || [];
-      return storedItems.map(({ price, regularPrice, ...item }) => ({
+      return storedItems.map(({ price, regularPrice, inStock, ...item }) => ({
         ...item,
         woocommerceId: item.woocommerceId ?? baseProducts.find((product) => product.id === item.id)?.woocommerceId,
       }));
     } catch { return []; }
   });
   useEffect(() => localStorage.setItem('chai-cart', JSON.stringify(rawItems)), [rawItems]);
-  const items = useMemo(() => rawItems.map((item) => ({ ...item, price: prices?.[item.woocommerceId]?.price ?? null, regularPrice: prices?.[item.woocommerceId]?.regularPrice ?? null })), [rawItems, prices]);
+  const items = useMemo(() => rawItems.map((item) => ({ ...item, price: prices?.[item.woocommerceId]?.price ?? null, regularPrice: prices?.[item.woocommerceId]?.regularPrice ?? null, inStock: prices?.[item.woocommerceId]?.inStock !== false })), [rawItems, prices]);
   const add = (product, quantity = 1) => setItems((current) => {
-    const { price, regularPrice, ...rest } = product;
+    const { price, regularPrice, inStock, ...rest } = product;
     const found = current.find((item) => item.id === product.id);
     return found ? current.map((item) => item.id === product.id ? { ...item, quantity: item.quantity + quantity } : item) : [...current, { ...rest, quantity }];
   });
@@ -91,7 +91,8 @@ function CartProvider({ children }) {
   const remove = (id) => setItems((current) => current.filter((item) => item.id !== id));
   const clear = () => setItems([]);
   const pricesReady = prices !== null && items.every((item) => item.price !== null);
-  const value = useMemo(() => ({ items, products, pricesReady, pricesLoading: prices === null && !pricesFailed, add, change, remove, clear, count: items.reduce((sum, item) => sum + item.quantity, 0), subtotal: items.reduce((sum, item) => sum + (item.price ?? 0) * item.quantity, 0) }), [items, products, prices, pricesFailed, pricesReady]);
+  const stockOk = items.every((item) => item.inStock);
+  const value = useMemo(() => ({ items, products, pricesReady, stockOk, pricesLoading: prices === null && !pricesFailed, add, change, remove, clear, count: items.reduce((sum, item) => sum + item.quantity, 0), subtotal: items.reduce((sum, item) => sum + (item.price ?? 0) * item.quantity, 0) }), [items, products, prices, pricesFailed, pricesReady, stockOk]);
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
 }
 const useCart = () => useContext(CartContext);
@@ -127,7 +128,7 @@ function AddButton({ product, quantity = 1 }) {
   const { add } = useCart();
   const [added, setAdded] = useState(false);
   const addToCart = () => { add(product, quantity); setAdded(true); setTimeout(() => setAdded(false), 1800); };
-  return <button className="button button-dark add-button" disabled={product.price === null} onClick={addToCart}>{added ? <><Check size={15} /> Pievienots</> : 'Pievienot groziņam'}</button>;
+  return <button className="button button-dark add-button" disabled={product.price === null || !product.inStock} onClick={addToCart}>{!product.inStock ? 'Nav noliktavā' : added ? <><Check size={15} /> Pievienots</> : 'Pievienot groziņam'}</button>;
 }
 
 function ProductCard({ product }) {
@@ -211,8 +212,8 @@ function ProductDetail() {
 }
 
 function Cart() {
-  const { items, subtotal, change, remove, pricesReady } = useCart(); const navigate = useNavigate(); const freeShipping = pricesReady && subtotal > 40;
-  return <main className="cart-page container"><div className="page-title"><span className="eyebrow">GROZIŅŠ</span><h1>Tavs groziņš</h1></div>{items.length === 0 ? <div className="empty-state"><p>Tavs groziņš šobrīd ir tukšs.</p><Link className="button button-dark" to="/kolekcijas/stihijas">Apskatīt tējas</Link></div> : <div className="cart-layout"><div className="cart-items">{items.map((item) => <div className="cart-item" key={item.id}><img src={item.image} alt="" /><div className="cart-item-info"><span className="eyebrow">{item.collection}</span><h3>{item.name}</h3><span><PriceTag item={item} /></span><div className="quantity"><button onClick={() => change(item.id, -1)} aria-label="Samazināt daudzumu"><Minus size={14} /></button><span>{item.quantity}</span><button onClick={() => change(item.id, 1)} aria-label="Palielināt daudzumu"><Plus size={14} /></button></div></div><button className="remove-button" onClick={() => remove(item.id)} aria-label={`Noņemt ${item.name}`}><X size={16} /></button></div>)}</div><aside className="summary"><span className="eyebrow">PASŪTĪJUMA KOPSAVILKUMS</span><div><span>Preces</span><span>{pricesReady ? `${subtotal.toFixed(2)} €` : '—'}</span></div><div><span>Piegāde</span><span>{freeShipping ? 'Bezmaksas' : 'Tiks aprēķināta'}</span></div><div className="summary-total"><b>{freeShipping ? 'Kopā' : 'Kopā bez piegādes'}</b><b>{pricesReady ? `${subtotal.toFixed(2)} €` : '—'}</b></div>{!pricesReady && <PriceUnavailableNotice />}<button className="button button-dark full-width" disabled={!pricesReady} onClick={() => navigate('/checkout')}>Noformēt pasūtījumu <ArrowRight size={16} /></button><small>{freeShipping ? 'Bezmaksas piegāde.' : 'Piegādes maksa tiks parādīta noformēšanas laikā.'} Bezmaksas piegāde pasūtījumiem virs 40 €.</small></aside></div>}</main>;
+  const { items, subtotal, change, remove, pricesReady, stockOk } = useCart(); const navigate = useNavigate(); const freeShipping = pricesReady && subtotal > 40;
+  return <main className="cart-page container"><div className="page-title"><span className="eyebrow">GROZIŅŠ</span><h1>Tavs groziņš</h1></div>{items.length === 0 ? <div className="empty-state"><p>Tavs groziņš šobrīd ir tukšs.</p><Link className="button button-dark" to="/kolekcijas/stihijas">Apskatīt tējas</Link></div> : <div className="cart-layout"><div className="cart-items">{items.map((item) => <div className="cart-item" key={item.id}><img src={item.image} alt="" /><div className="cart-item-info"><span className="eyebrow">{item.collection}</span><h3>{item.name}</h3><span><PriceTag item={item} /></span>{!item.inStock && <span className="stock-warning">Nav noliktavā — noņem no groziņa, lai turpinātu</span>}<div className="quantity"><button onClick={() => change(item.id, -1)} aria-label="Samazināt daudzumu"><Minus size={14} /></button><span>{item.quantity}</span><button onClick={() => change(item.id, 1)} aria-label="Palielināt daudzumu"><Plus size={14} /></button></div></div><button className="remove-button" onClick={() => remove(item.id)} aria-label={`Noņemt ${item.name}`}><X size={16} /></button></div>)}</div><aside className="summary"><span className="eyebrow">PASŪTĪJUMA KOPSAVILKUMS</span><div><span>Preces</span><span>{pricesReady ? `${subtotal.toFixed(2)} €` : '—'}</span></div><div><span>Piegāde</span><span>{freeShipping ? 'Bezmaksas' : 'Tiks aprēķināta'}</span></div><div className="summary-total"><b>{freeShipping ? 'Kopā' : 'Kopā bez piegādes'}</b><b>{pricesReady ? `${subtotal.toFixed(2)} €` : '—'}</b></div>{!pricesReady && <PriceUnavailableNotice />}<button className="button button-dark full-width" disabled={!pricesReady || !stockOk} onClick={() => navigate('/checkout')}>Noformēt pasūtījumu <ArrowRight size={16} /></button><small>{freeShipping ? 'Bezmaksas piegāde.' : 'Piegādes maksa tiks parādīta noformēšanas laikā.'} Bezmaksas piegāde pasūtījumiem virs 40 €.</small></aside></div>}</main>;
 }
 
 const merchant = {
@@ -293,7 +294,7 @@ function LockerSelect({ options, value, onChange }) {
   );
 }
 function Checkout() {
-  const { items, subtotal, pricesReady } = useCart();
+  const { items, subtotal, pricesReady, stockOk } = useCart();
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -313,7 +314,8 @@ function Checkout() {
   const isPickup = selectedOption?.type ? selectedOption.type === 'pickuppoint' : deliveryMethod === 'pakomats';
   const isCourier = selectedOption?.type ? selectedOption.type === 'courier' : deliveryMethod === 'kurjers';
   const usesLockerPicker = selectedOption?.type === 'pickuppoint';
-  const shipping = subtotal > 40 || !selectedOption ? 0 : Number(selectedOption.price);
+  const freeShipping = pricesReady && subtotal > 40;
+  const shipping = freeShipping || !selectedOption ? 0 : Number(selectedOption.price);
   useEffect(() => {
     let active = true;
     getShippingCountries()
@@ -448,7 +450,7 @@ function Checkout() {
           </label>
           <label>Piegādes metode
             <select name="deliveryMethod" required value={deliveryMethod} disabled={loadingCountries || loadingShippingOptions || !shippingOptions.length} onChange={(event) => setDeliveryMethod(event.target.value)}>
-              {loadingCountries || loadingShippingOptions ? <option value="">Ielādē piegādes veidus…</option> : shippingOptions.map((option) => <option value={option.id} key={option.id}>{option.name} — {Number(option.price).toFixed(2)} €</option>)}
+              {loadingCountries || loadingShippingOptions ? <option value="">Ielādē piegādes veidus…</option> : shippingOptions.map((option) => <option value={option.id} key={option.id}>{option.name} — {freeShipping ? 'Bezmaksas' : `${Number(option.price).toFixed(2)} €`}</option>)}
             </select>
           </label>
           {shippingError && <p className="form-error" role="alert">{shippingError}</p>}
@@ -473,15 +475,16 @@ function Checkout() {
           <label className="consent-label"><input required type="checkbox" name="consentAccepted" /> Piekrītu <Link to="/noteikumi" target="_blank">lietošanas noteikumiem</Link> un <Link to="/privatuma-politika" target="_blank">privātuma politikai</Link>.</label>
         </fieldset>
         {error && <p className="form-error" role="alert">{error}</p>}
-        <button className="button button-dark payment-button" type="submit" disabled={submitting || !shippingReady || !pricesReady}>Maksāt <ArrowRight size={16} /></button>
+        <button className="button button-dark payment-button" type="submit" disabled={submitting || !shippingReady || !pricesReady || !stockOk}>Maksāt <ArrowRight size={16} /></button>
         <p className="form-note">Maksājumi tiek apstrādāti MakeCommerce platformā. Norēķinu valūta ir EUR. Karte un maksājumu dati netiek glabāti šajā vietnē.</p>
       </div>
       <aside className="summary">
         <span className="eyebrow">TAVS PASŪTĪJUMS</span>
         {items.map((item) => <div className="summary-product" key={item.id}><span>{item.name} × {item.quantity}</span>        <span>{item.price === null ? '—' : `${(item.price * item.quantity).toFixed(2)} €`}</span></div>)}
-        <div><span>Piegāde</span><span>{shipping.toFixed(2)} €</span></div>
+        <div><span>Piegāde</span><span>{freeShipping ? 'Bezmaksas' : selectedOption ? `${shipping.toFixed(2)} €` : '—'}</span></div>
                 <div className="summary-total"><b>Kopā</b><b>{pricesReady ? `${(subtotal + shipping).toFixed(2)} €` : '—'}</b></div>
                 {!pricesReady && <PriceUnavailableNotice />}
+        {!stockOk && <p className="price-notice" role="alert">Kāda prece groziņā nav noliktavā. Lūdzu, noņem to no groziņa.</p>}
       </aside>
     </form>}
     {submitting && <div className="loading-overlay" role="alert" aria-busy="true" aria-live="assertive"><div className="spinner" /><p>Notiek pāradresācija uz maksājumu…</p></div>}

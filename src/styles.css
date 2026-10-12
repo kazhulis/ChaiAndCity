@@ -1393,3 +1393,4 @@ button {
 .button:disabled { opacity: .5; cursor: not-allowed; }
 .price-old { opacity: .55; text-decoration: line-through; margin-right: .4em; }
 .price-sale { color: #a8322d; }
+.stock-warning { display: block; color: #a8322d; font-size: .85rem; }
