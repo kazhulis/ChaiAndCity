@@ -9,8 +9,12 @@ const encode = (value) => encodeURIComponent(value).replace(/[!'()*]/g, (char) =
 
 // One-legged OAuth 1.0a: works even when WordPress does not detect the request as HTTPS,
 // where plain key/secret authentication is silently ignored.
-function signedUrl(method, url) {
+function signedUrl(method, fullUrl) {
+  const parsed = new URL(fullUrl);
+  const url = `${parsed.origin}${parsed.pathname}`;
+  const query = Object.fromEntries(parsed.searchParams);
   const params = {
+    ...query,
     oauth_consumer_key: config.woocommerce.consumerKey,
     oauth_nonce: crypto.randomBytes(12).toString('hex'),
     oauth_signature_method: 'HMAC-SHA256',
