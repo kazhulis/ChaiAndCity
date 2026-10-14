@@ -47,6 +47,12 @@ const mcShipping = new MakeCommerceShippingService();
 // SHIPPING_PROVIDER=makecommerce (default) or swotzy decides who supplies rates, pickup points and shipments.
 const useSwotzyShipping = config.shippingProvider === 'swotzy';
 
+// Creates the shipment with the active provider so it shows up in that provider's dashboard.
+async function createShipment(order) {
+  if (!useSwotzyShipping && isShippingEnabled()) return mcShipping.createShipment(order);
+  return swotzy.createShipment(order);
+}
+
 async function loadShippingOptions(itemCount = 1, country = config.makecommerce.country) {
   if (!isShippingCountrySupported(country)) throw new ValidationError('Neatbalstīta piegādes valsts.');
   if (useSwotzyShipping) return swotzy.getShippingOptions(country, itemCount);
@@ -177,7 +183,7 @@ app.post('/api/webhooks/woocommerce', async (request, response, next) => {
       if (paymentStatus === 'paid') {
         const localOrder = getOrder(order.id);
         if (localOrder && localOrder.shippingStatus === 'not_created') {
-          const shipment = await swotzy.createShipment(localOrder);
+          const shipment = await createShipment(localOrder);
           updateOrder(order.id, { shippingStatus: shipment.status, swotzyShipmentId: shipment.shipmentId });
         }
       }
@@ -193,7 +199,7 @@ async function markPaid(orderId) {
   await woocommerce.markPaid(orderId);
   updateOrder(orderId, { status: 'processing', paymentStatus: 'paid' });
   if (order.shippingStatus === 'not_created') {
-    const shipment = await swotzy.createShipment(getOrder(orderId));
+    const shipment = await createShipment(getOrder(orderId));
     updateOrder(orderId, { shippingStatus: shipment.status, swotzyShipmentId: shipment.shipmentId });
   }
 }

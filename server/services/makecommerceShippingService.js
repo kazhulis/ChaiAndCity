@@ -106,4 +106,28 @@ export class MakeCommerceShippingService {
       city: point.city,
     }));
   }
+  // Registers the shipment in MakeCommerce so it appears under Deliveries in the shop's MakeCommerce tab.
+  async createShipment(order) {
+    const { type, carrier } = parseOptionId(order.delivery.method);
+    if (!['pickuppoint', 'courier'].includes(type) || !carrier) throw new Error(`Unsupported MakeCommerce shipping method: ${order.delivery.method}`);
+    const country = order.delivery.country;
+    const address = order.delivery.address || {};
+    const destination = type === 'pickuppoint'
+      ? { id: String(order.delivery.location), country }
+      : { zip: address.postcode, country, city: address.city, street: address.street };
+    const created = await request('/shipments', {
+      method: 'POST',
+      headers: { 'makecommerce-carrier': carrier, 'makecommerce-method': type },
+      body: JSON.stringify([{
+        order: { id: String(order.id), reference: String(order.id) },
+        destination,
+        recipient: {
+          name: `${order.customer.firstName} ${order.customer.lastName}`.trim(),
+          phone: order.customer.phone,
+          email: order.customer.email,
+        },
+      }]),
+    });
+    return { shipmentId: created.trackingId, status: created.shipment?.status || 'CREATED', trackingLink: created.trackingLink };
+  }
 }
