@@ -192,16 +192,20 @@ app.post('/api/webhooks/woocommerce', async (request, response, next) => {
   } catch (error) { next(error); }
 });
 
+const paying = new Set();
 async function markPaid(orderId) {
   const order = getOrder(orderId);
-  if (!order || order.paymentStatus === 'paid') return;
+  if (!order || (order.paymentStatus === 'paid' && order.shippingStatus !== 'not_created') || paying.has(String(orderId))) return;
+  paying.add(String(orderId));
+  try {
   // Update WooCommerce first so a failed call can be retried by the next MakeCommerce notification.
-  await woocommerce.markPaid(orderId);
+  if (order.paymentStatus !== 'paid') await woocommerce.markPaid(orderId);
   updateOrder(orderId, { status: 'processing', paymentStatus: 'paid' });
   if (order.shippingStatus === 'not_created') {
     const shipment = await createShipment(getOrder(orderId));
     updateOrder(orderId, { shippingStatus: shipment.status, swotzyShipmentId: shipment.shipmentId });
   }
+  } finally { paying.delete(String(orderId)); }
 }
 
 function parseSigned(body) {
@@ -214,11 +218,24 @@ function redirectToShop(response, status, orderId) {
   response.redirect(303, url);
 }
 
+// Applies a signed MakeCommerce payment message. Used by both the server-to-server notification and the
+// customer return redirect, so the order is finalised (and the shipment created) even when the
+// notification URL is unreachable, e.g. PUBLIC_API_URL pointing at localhost. markPaid is idempotent.
+async function applyPaymentMessage(message) {
+  const order = getOrder(message.reference);
+  const amountMatches = order && Number(message.amount) === Number(order.amount?.toFixed(2));
+  const transactionMatches = order && (!message.transaction || message.transaction === order.transactionId);
+  const currencyMatches = !message.currency || message.currency === 'EUR';
+  if (['COMPLETED', 'APPROVED'].includes(message.status) && amountMatches && transactionMatches && currencyMatches) await markPaid(message.reference);
+  else if (order && order.paymentStatus !== 'paid' && transactionMatches && ['CANCELLED', 'EXPIRED', 'FAILED'].includes(message.status)) updateOrder(message.reference, { paymentStatus: message.status.toLowerCase() });
+}
+
 // MakeCommerce POSTs the customer back here with form fields `json` and `mac`.
 async function handleReturn(request, response, fallbackStatus) {
   const message = parseSigned(request.body);
   if (!message) return redirectToShop(response, 'failed', '');
   const completed = ['COMPLETED', 'APPROVED'].includes(message.status);
+  try { await applyPaymentMessage(message); } catch (error) { console.error('MakeCommerce return handling failed', error); }
   redirectToShop(response, completed ? 'success' : fallbackStatus, message.reference);
 }
 app.post('/api/payments/return', (request, response) => handleReturn(request, response, 'pending'));
@@ -228,16 +245,8 @@ app.post('/api/webhooks/makecommerce', async (request, response) => {
   const message = parseSigned(request.body);
   if (!message) return response.status(401).json({ message: 'Invalid signature.' });
   response.status(200).json({ received: true });
-  try {
-    const order = getOrder(message.reference);
-    const amountMatches = order && Number(message.amount) === Number(order.amount?.toFixed(2));
-    const transactionMatches = order && (!message.transaction || message.transaction === order.transactionId);
-    const currencyMatches = !message.currency || message.currency === 'EUR';
-    if (['COMPLETED', 'APPROVED'].includes(message.status) && amountMatches && transactionMatches && currencyMatches) await markPaid(message.reference);
-    else if (order && order.paymentStatus !== 'paid' && transactionMatches && ['CANCELLED', 'EXPIRED', 'FAILED'].includes(message.status)) updateOrder(message.reference, { paymentStatus: message.status.toLowerCase() });
-  } catch (error) { console.error('MakeCommerce notification handling failed', error); }
+  try { await applyPaymentMessage(message); } catch (error) { console.error('MakeCommerce notification handling failed', error); }
 });
-
 app.use((error, _request, response, _next) => {
   console.error(error);
   if (error instanceof ValidationError) return response.status(400).json({ message: error.message });
