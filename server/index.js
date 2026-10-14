@@ -44,9 +44,13 @@ app.get('/api/health', (_request, response) => response.json({ ok: true, environ
 
 const mcShipping = new MakeCommerceShippingService();
 
+// SHIPPING_PROVIDER=makecommerce (default) or swotzy decides who supplies rates, pickup points and shipments.
+const useSwotzyShipping = config.shippingProvider === 'swotzy';
+
 async function loadShippingOptions(itemCount = 1, country = config.makecommerce.country) {
   if (!isShippingCountrySupported(country)) throw new ValidationError('Neatbalstīta piegādes valsts.');
-  if (!isShippingEnabled()) return swotzy.getShippingOptions();
+  if (useSwotzyShipping) return swotzy.getShippingOptions(country, itemCount);
+  if (!isShippingEnabled()) return swotzy.getShippingOptions(country, itemCount);
   const count = Math.max(1, Math.min(Number.parseInt(itemCount, 10) || 1, 100));
   return mcShipping.getShippingOptions(count * config.makecommerce.itemWeightGrams, country);
 }
@@ -91,14 +95,16 @@ app.get('/api/shipping/options', async (request, response, next) => {
 
 app.get('/api/shipping/lockers', async (request, response, next) => {
   try {
-    if (!isShippingEnabled()) return response.json(await swotzy.getParcelLockers());
+    if (useSwotzyShipping || !isShippingEnabled()) {
+      if (!isShippingCountrySupported(request.query.country)) throw new ValidationError('Neatbalstīta piegādes valsts.');
+      return response.json(await swotzy.getParcelLockers(request.query.method, request.query.country));
+    }
     const { type, carrier } = parseOptionId(request.query.method);
     if (type !== 'pickuppoint') return response.json([]);
     if (!isShippingCountrySupported(request.query.country)) throw new ValidationError('Neatbalstīta piegādes valsts.');
     response.json(await mcShipping.getPickupPoints(carrier, request.query.country));
   } catch (error) { next(error); }
 });
-
 app.post('/api/payments/sessions', checkoutLimiter, async (request, response, next) => {
   try {
     validateOrder(request.body);

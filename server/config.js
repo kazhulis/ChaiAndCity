@@ -15,7 +15,12 @@ if (!shippingCountries.length || shippingCountries.some((country) => !/^[A-Z]{2}
   throw new Error('SHIPPING_COUNTRIES must contain comma-separated ISO 3166-1 alpha-2 country codes.');
 }
 
+// Who supplies shipping rates, pickup points and shipments: 'makecommerce' (default) or 'swotzy'.
+const shippingProvider = (process.env.SHIPPING_PROVIDER || 'makecommerce').toLowerCase();
+if (!['makecommerce', 'swotzy'].includes(shippingProvider)) throw new Error('SHIPPING_PROVIDER must be makecommerce or swotzy.');
+
 export const config = {
+  shippingProvider,
   port: Number(process.env.PORT || 3001),
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
   nodeEnv: process.env.NODE_ENV || 'development',
@@ -47,7 +52,26 @@ export const config = {
   swotzy: {
     enabled: process.env.SWOTZY_ENABLED === 'true',
     apiUrl: process.env.SWOTZY_API_URL,
+    // HTTP Basic credentials: apiUser + apiToken (or SWOTZY_API_TOKEN as "user:password").
+    apiUser: process.env.SWOTZY_API_USER || '',
     apiToken: process.env.SWOTZY_API_TOKEN,
+    currency: process.env.SWOTZY_CURRENCY || 'EUR',
+    // Overrides only; anything left empty is read from the WooCommerce store settings.
+    sender: {
+      full_name: process.env.SWOTZY_SENDER_NAME,
+      company: process.env.SWOTZY_SENDER_COMPANY || null,
+      phone: process.env.SWOTZY_SENDER_PHONE,
+      email: process.env.SWOTZY_SENDER_EMAIL,
+      address1: process.env.SWOTZY_SENDER_ADDRESS,
+      zip: process.env.SWOTZY_SENDER_ZIP,
+      city: process.env.SWOTZY_SENDER_CITY,
+      country: process.env.SWOTZY_SENDER_COUNTRY,
+    },
+    package: {
+      length: Number(process.env.SWOTZY_PACKAGE_LENGTH_CM || 20),
+      width: Number(process.env.SWOTZY_PACKAGE_WIDTH_CM || 15),
+      height: Number(process.env.SWOTZY_PACKAGE_HEIGHT_CM || 10),
+    },
   },
   webhookSecrets: {
     woocommerce: process.env.WOOCOMMERCE_WEBHOOK_SECRET,

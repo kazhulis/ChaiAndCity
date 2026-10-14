@@ -16,7 +16,7 @@ export function validateOrder(input) {
   if (!isShippingCountrySupported(input.delivery.country)) {
     throw new ValidationError('Izvēlies piegādes valsti, uz kuru tiek nodrošināta piegāde.');
   }
-  if (input.delivery.method.startsWith('courier') || input.delivery.method === 'kurjers') {
+  if (/courier|kurjer/i.test(input.delivery.method)) {
     const address = input.delivery.address;
     if (!address || ['street', 'city', 'postcode'].some((field) => typeof address[field] !== 'string' || !address[field].trim())) {
       throw new ValidationError('Lūdzu, norādi kurjera piegādes adresi: iela, pilsēta un pasta indekss.');

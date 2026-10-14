@@ -109,6 +109,21 @@ export class WooCommerceService {
     return request(`/orders/${encodeURIComponent(orderId)}`, { method: 'PUT', body: JSON.stringify({ set_paid: true }) });
   }
 
+  // Store address and sender e-mail as configured in WooCommerce (the same data the Swotzy plugin uses).
+  async getStoreSettings() {
+    if (!config.woocommerce.enabled) return null;
+    const [general, email] = await Promise.all([request('/settings/general'), request('/settings/email/woocommerce_email_from_address').catch(() => null)]);
+    const value = (id) => general?.find((setting) => setting.id === id)?.value || '';
+    return {
+      address1: value('woocommerce_store_address'),
+      address2: value('woocommerce_store_address_2'),
+      city: value('woocommerce_store_city'),
+      zip: value('woocommerce_store_postcode'),
+      country: value('woocommerce_default_country').split(':')[0],
+      email: email?.value || '',
+    };
+  }
+
   async getOrder(orderId) {
     if (!config.woocommerce.enabled) return null;
     return request(`/orders/${encodeURIComponent(orderId)}`);
