@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+﻿import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { HashRouter, Link, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowRight, Check, Instagram, Lock, Minus, Plus, ShoppingBag, X } from 'lucide-react';
@@ -7,57 +7,70 @@ import { createPaymentSession } from './services/paymentService';
 import { getParcelLockers, getShippingCountries, getShippingOptions, setupMakeCommerceShipping } from './services/shippingService';
 import { getProductPrices } from './services/productService';
 import heroImage from './assets/IMG_4472.jpg';
+import processImage from './assets/IMG_Process.JPG';
+import buttonsImage from './assets/IMG_Pogas.JPG';
 
-const productImageFiles = import.meta.glob('./assets/products/*.{jpg,jpeg,png,webp,avif,svg}', {
+const productImageFiles = import.meta.glob('./assets/products/*/*.png', {
   eager: true,
   import: 'default',
   query: '?url',
 });
 
-function getProductImage(slug, fallback) {
-  const matchingFile = Object.entries(productImageFiles).find(([path]) => {
-    const filename = path.split('/').pop().split('.')[0];
-    return filename === slug;
-  });
-  return matchingFile ? matchingFile[1] : fallback;
+function getProductImages(folder) {
+  return [1, 2, 3, 4, 5]
+    .map((n) => productImageFiles[`./assets/products/${folder}/${n}.png`])
+    .filter(Boolean);
 }
-
 const baseProducts = [
   {
     id: 'uguns-udens-stihijas',
     name: 'UGUNS/ŪDENS',
     collection: 'stihijas',
     woocommerceId: 21,
-    image: getProductImage('uguns-udens', 'https://images.unsplash.com/photo-1544787219-7f47ccb76574?auto=format&fit=crop&w=1200&q=85'),
-    description: 'Spēcīga, silta un līdzsvarojoša tējas kompozīcija vakariem, kad gribas atgriezties pie sevis.',
-    ingredients: 'Ingvers, kanēlis, hibisks, rožu ziedlapiņas, apelsīna miziņa.',
+    images: getProductImages('UGUNS_UDENS'),
+    image: getProductImages('UGUNS_UDENS')[0],
+    description: 'UGUNS kompozīcija atmodina sajūtas un sniedz enerģijas dzirksti ar sildošu un dinamisku augu maisījumu. Savukārt ŪDENS apvieno nomierinošas un svaigas sastāvdaļas, iedvesmojoties no ūdens mierīgās un plūstošās dabas.',
+    ingredients: 'UGUNS: raudene, ehinācija, lofants, kliņģerīte, kardamons, rozā pipari. \nŪDENS: māllepe, melisa, svētais baziliks, citronzāle, bambusa lapas.',
   },
   {
     id: 'zeme-gaiss-stihijas',
     name: 'ZEME/GAISS',
     collection: 'stihijas',
     woocommerceId: 20,
-    image: getProductImage('zeme-gaiss', 'https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&w=1200&q=85'),
-    description: 'Maiga un viegla zāļu tēja mierīgam rītam un lēnām sarunām pie galda.',
-    ingredients: 'Citronmētra, kumelīte, lavanda, liepziedi, citronverbēna.',
+    images: getProductImages('GAISS_ZEME'),
+    image: getProductImages('GAISS_ZEME')[0],
+    description: 'ZEME ir piezemējošs augu maisījums ar siltām sastāvdaļām, kas radīts, lai saskaņotu dzērāju ar šo elementu. GAISS ir viegls un aromātisks augu maisījums ar rūpīgi izvēlētām sastāvdaļām, iedvesmojoties no gaisa svaiguma un kustības.',
+    ingredients: 'ZEME: cigoriņš, ingvers, parmētra, liepu ziedi, kurkuma, bambusa lapas, kliņģerīte. \nGAISS: rozmarīns, lavanda, rožu lapas, lofants, salvija.',
   },
   {
     id: 'vinš-vina-stihijas',
     name: 'VIŅŠ/VIŅA',
     collection: 'stihijas',
     woocommerceId: 22,
-    image: getProductImage('vins-vina', 'https://images.unsplash.com/photo-1594631252845-29fc4cc8cde9?auto=format&fit=crop&w=1200&q=85'),
-    description: 'Izteiksmīgs, augļains maisījums ar vakara noskaņu un dziļu, samtainu garšu.',
-    ingredients: 'Roibošs, upenes, vīnogas, rozā pipari, damiana.',
+    images: getProductImages('VINS_VINA'),
+    image: getProductImages('VINS_VINA')[0],
+    description: 'VIŅŠ un VIŅA ir tēju spēle romantiku mīlošiem pāriem un ikvienam, kurš vēlas izcelt savu vīrišķo vai sievišķo iedabu. Veidojot tēju garšu un iedarbības saspēli, atlasīti augi no Latvijas un citām valstīm.',
+    ingredients: 'VIŅA: vērbena, liepu ziedi, kalnrozīte, damiāns, virši, timiāns. \nVIŅŠ: aroniju lapas, ugunspuķe, ragainās kazes zāle, pu-erh, kadiķogas.',
   },
   {
     id: 'saule-meness-stihijas',
     name: 'SAULE/MĒNESS',
     collection: 'stihijas',
     woocommerceId: 13,
-    image: getProductImage('saule-meness', 'https://images.unsplash.com/photo-1564890369478-c89ca6d9cde9?auto=format&fit=crop&w=1200&q=85'),
-    description: 'Gaiša, citrusaina tēja, kas ievelk saules gaismu arī pelēkākā dienā.',
-    ingredients: 'Zaļā tēja, citronzāle, apelsīna ziedi, piparmētra.',
+    images: getProductImages('SAULE_MENESS'),
+    image: getProductImages('SAULE_MENESS')[0],
+    description: 'SAULES un MĒNESS tējas simbolizē dienas un nakts maiņu un mūsu ķermeņa pakļaušanos tai. SAULES tējas sastāvs radīts, lai apmierinātu enerģijas, vitalitātes un dienas sākumavajadzības. MĒNESS tēja atbalsta vēlmi pēc miera, pārdomām un miega.',
+    ingredients: 'SAULE: mate, liepu ziedi, timiāns, pelašķis, saulespuķe, rozā pipari. \nMĒNESS: pūķgalve, vīgrieži, gotu-kola, melisa, rudzupuķes.',
+  },
+  {
+    id: 'prats-sirds-stihijas',
+    name: 'PRĀTS/SIRDS',
+    collection: 'stihijas',
+    woocommerceId: 77,
+    images: getProductImages('PRATS_SIRDS'),
+    image: getProductImages('PRATS_SIRDS')[0],
+    description: 'PRĀTA tēja apvieno augus, kas pazīstami ar spēju veicināt pārdomas un dziļāku izpratni. Savukārt SIRDS tēja ietver nomierinošus augus, kas paver ceļu pateicībai un izpratnei.',
+    ingredients: 'PRĀTS: tulsi, gotu kola, kurkuma, koriandrs, deviņvīruspēks, fenhelis. \nSIRDS: kascara, liepu ziedi, lofants, cigoriņš.',
   },
 ];
 
@@ -115,7 +128,7 @@ function Header() {
     <Link className="brand" to="/">CHAI AND CITY</Link>
     <nav className={open ? 'main-nav is-open' : 'main-nav'} aria-label="Galvenā navigācija">
       <Link to="/kolekcijas/stihijas" onClick={() => setOpen(false)}>Iepērcies</Link>
-      <Link to="/kolekcijas" onClick={() => setOpen(false)}>Kolekcijas</Link>
+      {/*<Link to="/kolekcijas" onClick={() => setOpen(false)}>Kolekcijas</Link>*/}
     </nav>
     <Link className="cart-link" to="/grozins" aria-label={`Groziņš, ${count} preces`}>
       <ShoppingBag size={18} strokeWidth={1.4} /><span>Groziņš</span><b>{count}</b>
@@ -151,19 +164,27 @@ function Home() {
         <img className="hero-image" src={heroImage} alt="Dabīgi tējas augi un ziedi uz smiltīm ar gliemežvākiem" />
       </div>
       <div className="hero-content">
-        <span className="eyebrow">DABISKI MAISĪJUMI · RAŽOTS LATVIJĀ</span>
-        <h1>NO DABAS<br /><i>LĪDZ TAVĀM MĀJĀM</i></h1>
-        <p>Tējas ar raksturu, kas radītas no dabīgām sastāvdaļām un iedvesmotas no Latvijas dabas.</p>
+        <span className="eyebrow">TĒJA IECEĻO PILSĒTĀ</span>
+        <h1>Presēta augu tēja. Roku darbs.</h1>
+        <p>Katrs augs ar savu raksturu, katrs salikums ir savs elements. Atklāj presētu augu tēju, kas radīta <i>ikdienas tējas rituāliem.</i></p>
         <div className="hero-actions">
-          <Link className="button button-light" to="/kolekcijas">Iepērcies pēc kolekcijas <ArrowRight size={16} /></Link>
+          <Link className="button button-light" to="/kolekcijas/stihijas">Iepērcies <ArrowRight size={16} /></Link>
         </div>
 
       </div>
       
     </section>
     <ProductGrid />
-    <section className="manifesto container"><span className="eyebrow">MŪSU STĀSTS</span><h2>Rituāls, kas sākas<br /><i>ar vienu krūzi.</i></h2><p>Mēs ticam, ka ikdienas mazajiem mirkļiem ir spēks. Tāpēc radām tējas, kas aicina apstāties, sajust un būt klātesošam.</p></section>
-  </main></>;
+    {/*<section className="manifesto container"><span className="eyebrow">MŪSU STĀSTS</span><h2>Rituāls, kas sākas<br /><i>ar vienu krūzi.</i></h2><p>Mēs ticam, ka ikdienas mazajiem mirkļiem ir spēks. Tāpēc radām tējas, kas aicina apstāties, sajust un būt klātesošam.</p></section>*/}
+        <section className="info-block container">
+          <img src={processImage} alt="Tējas pogu tapšanas process" />
+          <div><span className="eyebrow">PAR CHAI AND CITY</span><p>CHAI AND CITY apvieno Latvijas dabas augus ar iedvesmu no senajām Āzijas tējas presēšanas tradīcijām. Radām ar rokām veidotas tējas pogas, kurās katram augu salikumam ir sava ideja, raksturs un stihija. Mūsu pieeja balstās rūpīgā augu izvēlē, garšu saderībā un vēlmē ieviest tējas baudīšanā jaunu, apzinātu rituālu.</p></div>
+        </section>
+        <section className="info-block info-block-reverse container">
+          <img src={buttonsImage} alt="Presētās tējas pogas" />
+          <div><span className="eyebrow">PAR TĒJU</span><p>Apvienojot Latvijas un Āzijas augus sastāvā, atklājam bagātīgo un daudzveidīgo herbālo tēju garšu pasauli. Katrai kompozīcijai ir sava būtība, kas aicina iepazīt savu valdošo stihiju, to izcelt vai meklēt līdzsvaru ar pretējo elementu.</p></div>
+        </section>
+      </main></>;
 }
 
 const collectionSlots = [
@@ -208,7 +229,7 @@ function ElementsCollection() {
 
 function ProductDetail() {
   const { id } = useParams(); const { products, pricesReady, pricesLoading } = useCart(); const product = products.find((item) => item.id === id) || products[0]; const [quantity, setQuantity] = useState(1);
-  return <main className="detail-page container"><div className="detail-image"><img src={product.image} alt={`${product.name} tējas iepakojums`} /></div><div className="detail-copy"><span className="eyebrow">{product.collection}</span><h1>{product.name}</h1><div className="detail-price"><PriceTag item={product} /></div>{!pricesReady && !pricesLoading && <PriceUnavailableNotice />}<p className="detail-description">{product.description}</p><div className="detail-info"><div><span className="eyebrow">SASTĀVS</span><p>{product.ingredients}</p></div><div><span className="eyebrow">IEPAKOJUMS</span><p>50 g · aptuveni 25 krūzēm</p></div></div><div className="purchase-row"><div className="quantity"><button onClick={() => setQuantity(Math.max(1, quantity - 1))} aria-label="Samazināt daudzumu"><Minus size={15} /></button><span>{quantity}</span><button onClick={() => setQuantity(quantity + 1)} aria-label="Palielināt daudzumu"><Plus size={15} /></button></div><AddButton product={product} quantity={quantity} /></div></div><div className="related"><div className="section-heading"><span className="eyebrow">VARĒTU PATIKT ARĪ</span><span className="line" /></div><div className="product-grid">{products.filter((item) => item.id !== product.id).slice(0, 3).map((item) => <ProductCard product={item} key={item.id} />)}</div></div></main>;
+  return <main className="detail-page container"><div className="detail-gallery"><div className="detail-image"><img src={product.image} alt={`${product.name} tējas iepakojums`} /></div>{product.images.slice(1, 3).map((src, i) => <div className={`detail-image detail-image-wide${i === 0 ? ' detail-image-banner' : ''}`} key={src}><img src={src} alt={`${product.name} — attēls ${i + 2}`} loading="lazy" /></div>)}<div className="detail-image-row">{product.images.slice(3, 5).map((src, i) => <div className="detail-image" key={src}><img src={src} alt={`${product.name} — attēls ${i + 4}`} loading="lazy" /></div>)}</div></div><div className="detail-copy"><span className="eyebrow">{product.collection}</span><h1>{product.name}</h1><div className="detail-price"><PriceTag item={product} /></div>{!pricesReady && !pricesLoading && <PriceUnavailableNotice />}<p className="detail-description">{product.description}</p><div className="detail-info"><div><span className="eyebrow">SASTĀVS</span><p>{product.ingredients}</p><p><strong>Pagatavošana:</strong> Vienu tējas pogu ievieto 400 ml kanniņā, pārlej ar 90 °C karstu ūdeni un ļauj ievilkties 5 minūtes.</p></div></div><div className="purchase-row"><div className="quantity"><button onClick={() => setQuantity(Math.max(1, quantity - 1))} aria-label="Samazināt daudzumu"><Minus size={15} /></button><span>{quantity}</span><button onClick={() => setQuantity(quantity + 1)} aria-label="Palielināt daudzumu"><Plus size={15} /></button></div><AddButton product={product} quantity={quantity} /></div></div><div className="related"><div className="section-heading"><span className="eyebrow">VARĒTU PATIKT ARĪ</span><span className="line" /></div><div className="product-grid">{products.filter((item) => item.id !== product.id).map((item) => <ProductCard product={item} key={item.id} />)}</div></div></main>;
 }
 
 function Cart() {
