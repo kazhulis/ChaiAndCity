@@ -20,7 +20,7 @@ function authHeader() {
 }
 
 async function request(path, options = {}) {
-  if (!config.swotzy.enabled) return null;
+  if (!config.swotzy.enabled) throw new Error('Swotzy shipping is not enabled.');
   const response = await fetch(`${config.swotzy.apiUrl.replace(/\/$/, '')}${path}`, {
     ...options,
     headers: { Authorization: authHeader(), accept: 'application/json', 'Content-Type': 'application/json', ...(options.headers || {}) },
@@ -30,13 +30,9 @@ async function request(path, options = {}) {
     const detail = typeof body?.detail === 'string' ? body.detail : body?.message || (body?.detail ? JSON.stringify(body.detail).slice(0, 300) : '');
     throw new Error(`Swotzy ${options.method || 'GET'} ${path.split('?')[0]} failed with HTTP ${response.status}${detail ? `: ${detail}` : ''}`);
   }
+  if (body === null) throw new Error(`Swotzy ${options.method || 'GET'} ${path.split('?')[0]} returned an invalid JSON response.`);
   return body;
 }
-
-const fallbackOptions = [
-  { id: 'pickuppoint:mock:pakomats', type: 'pickuppoint', name: 'Pakomāts', price: 2.99 },
-  { id: 'courier:mock:kurjers', type: 'courier', name: 'Kurjers', price: 5.9 },
-];
 
 // Option ids look like "pickuppoint:OMNIVA:Omniva Parcel Terminal" or "courier:DPD:DPD Classic".
 export function parseOptionId(id) {
@@ -71,33 +67,37 @@ async function getSender() {
 
 export class SwotzyService {
   async getShippingOptions(country, itemCount = 1) {
-    if (!config.swotzy.enabled) return fallbackOptions;
     const { currency } = config.swotzy;
     const sender = await getSender();
     const pkg = packageFor(itemCount);
-    const result = await cached(`rates:${country}:${pkg.weight}`, () => request('/rates', {
+    const recipientZip = config.swotzy.rateZip || (country === sender.country ? sender.zip : '');
+    if (!recipientZip) {
+      throw new Error(`Set SWOTZY_RATE_ZIP to a valid destination postal code before requesting Swotzy rates for ${country}.`);
+    }
+    const result = await cached(`rates:${country}:${recipientZip}:${pkg.weight}`, () => request('/rates', {
       method: 'POST',
       body: JSON.stringify({
         sender_address: { zip: sender.zip, city: sender.city, country: sender.country },
-        // Destination zip is unknown until checkout is submitted, so rates are quoted per carrier/service for the country.
-        recipient_address: { zip: process.env.SWOTZY_RATE_ZIP || sender.zip, country },
+        delivery_config: { type: 'classic' },
+        recipient_address: { zip: recipientZip, country },
         currency,
         shipments: [{ package: pkg }],
       }),
     }));
     const options = new Map();
-    for (const rate of result?.rates || []) {
+    for (const rate of Array.isArray(result?.rates) ? result.rates : []) {
       const price = rate.promo_price ?? rate.price;
-      if (price === null || price === undefined || rate.delivery_type === 'pallet') continue;
-      const type = rate.delivery_type === 'parcelshop' ? 'pickuppoint' : 'courier';
+      if (price === null || price === undefined || rate.delivery_type !== 'classic') continue;
+      const amount = Number(price);
+      if (!Number.isFinite(amount) || amount < 0 || !rate.carrier || !rate.service || !rate.name) continue;
+      const type = 'courier';
       const id = `${type}:${rate.carrier}:${rate.service}`;
-      if (!options.has(id)) options.set(id, { id, type, carrier: rate.carrier, name: rate.name, price: Number(price) });
+      if (!options.has(id)) options.set(id, { id, type, carrier: rate.carrier, name: rate.name, price: amount });
     }
     return [...options.values()];
   }
 
   async getParcelLockers(method, country) {
-    if (!config.swotzy.enabled) return [];
     const { type, carrier } = parseOptionId(method);
     if (type !== 'pickuppoint' || !/^[A-Z_]+$/.test(carrier || '')) return [];
     return cached(`points:${country}:${carrier}`, async () => {
@@ -122,7 +122,7 @@ export class SwotzyService {
   }
 
   async createShipment(order) {
-    if (!config.swotzy.enabled || config.shippingProvider !== 'swotzy') return { shipmentId: `mock-${order.id}`, status: 'pending' };
+    if (config.shippingProvider !== 'swotzy') return { shipmentId: `mock-${order.id}`, status: 'pending' };
     const { type, carrier, service } = parseOptionId(order.delivery.method);
     const { currency } = config.swotzy;
     const sender = await getSender();

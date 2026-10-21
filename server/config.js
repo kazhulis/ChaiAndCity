@@ -51,11 +51,12 @@ export const config = {
   },
   swotzy: {
     enabled: process.env.SWOTZY_ENABLED === 'true',
-    apiUrl: process.env.SWOTZY_API_URL,
+    apiUrl: process.env.SWOTZY_API_URL || 'https://api.swotzy.com/public',
     // HTTP Basic credentials: apiUser + apiToken (or SWOTZY_API_TOKEN as "user:password").
     apiUser: process.env.SWOTZY_API_USER || '',
     apiToken: process.env.SWOTZY_API_TOKEN,
     currency: process.env.SWOTZY_CURRENCY || 'EUR',
+    rateZip: process.env.SWOTZY_RATE_ZIP || '',
     // Overrides only; anything left empty is read from the WooCommerce store settings.
     sender: {
       full_name: process.env.SWOTZY_SENDER_NAME,
