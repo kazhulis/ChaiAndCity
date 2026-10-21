@@ -53,10 +53,10 @@ async function createShipment(order) {
   return swotzy.createShipment(order);
 }
 
-async function loadShippingOptions(itemCount = 1, country = config.makecommerce.country) {
+async function loadShippingOptions(itemCount = 1, country = config.makecommerce.country, method, parcelshopId) {
   if (!isShippingCountrySupported(country)) throw new ValidationError('Neatbalstīta piegādes valsts.');
-  if (useSwotzyShipping) return swotzy.getShippingOptions(country, itemCount);
-  if (!isShippingEnabled()) return swotzy.getShippingOptions(country, itemCount);
+  if (useSwotzyShipping) return swotzy.getShippingOptions(country, itemCount, method, parcelshopId);
+  if (!isShippingEnabled()) return swotzy.getShippingOptions(country, itemCount, method, parcelshopId);
   const count = Math.max(1, Math.min(Number.parseInt(itemCount, 10) || 1, 100));
   return mcShipping.getShippingOptions(count * config.makecommerce.itemWeightGrams, country);
 }
@@ -96,7 +96,12 @@ app.post('/api/shipping/setup', shippingSetupLimiter, async (request, response, 
 });
 
 app.get('/api/shipping/options', async (request, response, next) => {
-  try { response.json(await loadShippingOptions(request.query.items, request.query.country)); } catch (error) { next(error); }
+  try {
+    if (Boolean(request.query.method) !== Boolean(request.query.parcelshop)) {
+      throw new ValidationError('Lai aprēķinātu pakomāta cenu, jānorāda pārvadātājs un pakomāts.');
+    }
+    response.json(await loadShippingOptions(request.query.items, request.query.country, request.query.method, request.query.parcelshop));
+  } catch (error) { next(error); }
 });
 
 app.get('/api/shipping/lockers', async (request, response, next) => {
@@ -121,8 +126,23 @@ app.post('/api/payments/sessions', checkoutLimiter, async (request, response, ne
     if (request.body.items.some((item) => priceDetails[item.productId]?.inStock === false)) {
       throw new ValidationError('Kāda no precēm vairs nav noliktavā.');
     }
-    const { shipping, total } = calculateTotal(request.body, await loadShippingOptions(itemCount, request.body.delivery.country), await woocommerce.getPrices());
-    const orderRequest = { ...request.body, delivery: { ...request.body.delivery, cost: shipping }, consentAcceptedAt };
+    const shippingOptions = await loadShippingOptions(
+      itemCount,
+      request.body.delivery.country,
+      request.body.delivery.method,
+      request.body.delivery.location,
+    );
+    const { shipping, total } = calculateTotal(request.body, shippingOptions, await woocommerce.getPrices());
+    const selectedShippingOption = shippingOptions.find((option) => option.id === request.body.delivery.method);
+    const orderRequest = {
+      ...request.body,
+      delivery: {
+        ...request.body.delivery,
+        cost: shipping,
+        ...(selectedShippingOption?.service ? { service: selectedShippingOption.service } : {}),
+      },
+      consentAcceptedAt,
+    };
     const wooOrder = await woocommerce.createOrder(orderRequest);
     if (wooOrder.total !== undefined && Math.abs(Number(wooOrder.total) - total) > 0.01) {
       console.warn(`Order ${wooOrder.id}: WooCommerce total ${wooOrder.total} differs from charged total ${total.toFixed(2)}.`);

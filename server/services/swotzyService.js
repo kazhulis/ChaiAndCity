@@ -4,6 +4,23 @@ import { WooCommerceService } from './woocommerceService.js';
 const CACHE_MS = 6 * 60 * 60 * 1000;
 const MAX_PARCELSHOP_PAGES = 50;
 const cache = new Map();
+const carrierNames = {
+  DHL: 'DHL',
+  DHL_EXPRESS: 'DHL Express',
+  DPD: 'DPD',
+  EXPRESS_PASTS: 'Express Pasts',
+  FEDEX: 'FedEx',
+  ITELLA: 'Itella',
+  LATVIJAS_PASTS: 'Latvijas Pasts',
+  LITHUANIAN_POST: 'Lietuvos paštas',
+  LITHUANIAN_POST_EXPRESS: 'Lietuvos paštas Express',
+  NOVAPOST: 'Nova Post',
+  OMNIVA: 'Omniva',
+  QWQER: 'QWQER',
+  UNISEND: 'Unisend',
+  UPS: 'UPS',
+  VENIPAK: 'Venipak',
+};
 
 async function cached(key, loader) {
   const hit = cache.get(key);
@@ -66,64 +83,85 @@ async function getSender() {
 }
 
 export class SwotzyService {
-  async getShippingOptions(country, itemCount = 1) {
-    const { currency } = config.swotzy;
+  async getShippingOptions(country, itemCount = 1, method, parcelshopId) {
+    if (!method || !parcelshopId) {
+      const parcelshops = await this.getParcelshops(country);
+      const carriers = [...new Set(parcelshops.map((point) => point.carrier).filter(Boolean))];
+      return carriers.map((carrier) => ({
+        id: `pickuppoint:${carrier}`,
+        type: 'pickuppoint',
+        carrier,
+        name: `${carrierNames[carrier] || carrier.replaceAll('_', ' ')} pakomāts`,
+      }));
+    }
+
+    const { type, carrier } = parseOptionId(method);
+    if (type !== 'pickuppoint' || !/^[A-Z_]+$/.test(carrier || '')) return [];
+    const point = (await this.getParcelLockers(method, country)).find((locker) => locker.id === String(parcelshopId));
+    if (!point) throw new Error('Izvēlētais pakomāts šim pārvadātājam nav pieejams.');
+
     const sender = await getSender();
     const pkg = packageFor(itemCount);
-    const recipientZip = config.swotzy.rateZip || (country === sender.country ? sender.zip : '');
-    if (!recipientZip) {
-      throw new Error(`Set SWOTZY_RATE_ZIP to a valid destination postal code before requesting Swotzy rates for ${country}.`);
-    }
-    const result = await cached(`rates:${country}:${recipientZip}:${pkg.weight}`, () => request('/rates', {
+    const result = await cached(`parcelshop-rates:${country}:${carrier}:${point.id}:${pkg.weight}`, () => request('/rates', {
       method: 'POST',
       body: JSON.stringify({
         sender_address: { zip: sender.zip, city: sender.city, country: sender.country },
-        delivery_config: { type: 'classic' },
-        recipient_address: { zip: recipientZip, country },
-        currency,
+        currency: config.swotzy.currency,
         shipments: [{ package: pkg }],
+        delivery_config: { type: 'parcelshop', parcelshop_id: point.id },
+        carrier,
       }),
     }));
-    const options = new Map();
-    for (const rate of Array.isArray(result?.rates) ? result.rates : []) {
-      const price = rate.promo_price ?? rate.price;
-      if (price === null || price === undefined || rate.delivery_type !== 'classic') continue;
-      const amount = Number(price);
-      if (!Number.isFinite(amount) || amount < 0 || !rate.carrier || !rate.service || !rate.name) continue;
-      const type = 'courier';
-      const id = `${type}:${rate.carrier}:${rate.service}`;
-      if (!options.has(id)) options.set(id, { id, type, carrier: rate.carrier, name: rate.name, price: amount });
+    const rate = (Array.isArray(result?.rates) ? result.rates : []).find((entry) => entry.carrier === carrier && entry.delivery_type === 'parcelshop');
+    const price = rate?.promo_price ?? rate?.price;
+    const amount = Number(price);
+    if (!rate || price === null || price === undefined || !Number.isFinite(amount) || amount < 0 || !rate.service) {
+      throw new Error('Swotzy šim pakomātam neatgrieza derīgu piegādes cenu.');
     }
-    return [...options.values()];
+    return [{
+      id: method,
+      type: 'pickuppoint',
+      carrier,
+      name: `${carrierNames[carrier] || carrier.replaceAll('_', ' ')} pakomāts`,
+      service: rate.service,
+      price: amount,
+    }];
+  }
+
+  async getParcelshops(country, carrier) {
+    const key = `parcelshops:${country}:${carrier || 'all'}`;
+    return cached(key, async () => {
+      const parcelshops = [];
+      let cursor;
+      for (let page = 0; page < MAX_PARCELSHOP_PAGES; page += 1) {
+        const params = new URLSearchParams({ country, size: '100' });
+        if (carrier) params.set('carrier', carrier);
+        if (cursor) params.set('cursor', cursor);
+        const body = await request(`/parcelshops/?${params}`);
+        parcelshops.push(...(body?.items || []));
+        cursor = body?.next_page;
+        if (!cursor) break;
+      }
+      return parcelshops;
+    });
   }
 
   async getParcelLockers(method, country) {
     const { type, carrier } = parseOptionId(method);
     if (type !== 'pickuppoint' || !/^[A-Z_]+$/.test(carrier || '')) return [];
-    return cached(`points:${country}:${carrier}`, async () => {
-      const lockers = [];
-      let cursor;
-      for (let page = 0; page < MAX_PARCELSHOP_PAGES; page += 1) {
-        const params = new URLSearchParams({ carrier, country, size: '100' });
-        if (cursor) params.set('cursor', cursor);
-        const body = await request(`/parcelshops/?${params}`);
-        lockers.push(...(body?.items || []));
-        cursor = body?.next_page;
-        if (!cursor) break;
-      }
-      return lockers.map((point) => ({
-        id: String(point.id),
-        name: point.display_name,
-        address: point.street || point.display_name,
-        city: point.city,
-        postcode: point.zip || undefined,
-      }));
-    });
+    const parcelshops = await this.getParcelshops(country, carrier);
+    return parcelshops.map((point) => ({
+      id: String(point.id),
+      name: point.display_name,
+      address: point.street || point.display_name,
+      city: point.city,
+      postcode: point.zip || undefined,
+    }));
   }
 
   async createShipment(order) {
     if (config.shippingProvider !== 'swotzy') return { shipmentId: `mock-${order.id}`, status: 'pending' };
-    const { type, carrier, service } = parseOptionId(order.delivery.method);
+    const { type, carrier } = parseOptionId(order.delivery.method);
     const { currency } = config.swotzy;
     const sender = await getSender();
     const quantity = order.items.reduce((sum, item) => sum + item.quantity, 0);
@@ -146,7 +184,7 @@ export class SwotzyService {
       retail_currency: currency,
       shipments: [{ package: packageFor(quantity) }],
       carrier,
-      service,
+      service: order.delivery.service,
       delivery_config: isPickup
         ? { type: 'parcelshop', parcelshop_id: order.delivery.location }
         : { type: 'classic' },

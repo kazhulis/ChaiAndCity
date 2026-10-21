@@ -28,8 +28,8 @@ export async function setupMakeCommerceShipping(token) {
   return body;
 }
 
-export function getShippingOptions(items, country) {
-  return get('options', { items, country });
+export function getShippingOptions(items, country, method, parcelshop) {
+  return get('options', { items, country, method, parcelshop });
 }
 
 export function getParcelLockers(method, country) {

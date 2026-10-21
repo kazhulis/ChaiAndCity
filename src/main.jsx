@@ -329,6 +329,9 @@ function Checkout() {
   const [shippingOptions, setShippingOptions] = useState([]);
   const [lockers, setLockers] = useState([]);
   const [selectedLocker, setSelectedLocker] = useState('');
+  const [shippingRate, setShippingRate] = useState(null);
+  const [loadingShippingRate, setLoadingShippingRate] = useState(false);
+  const [shippingRateError, setShippingRateError] = useState('');
   const [deliveryMethod, setDeliveryMethod] = useState('');
   const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
   const selectedOption = shippingOptions.find((option) => option.id === deliveryMethod);
@@ -336,7 +339,14 @@ function Checkout() {
   const isCourier = selectedOption?.type ? selectedOption.type === 'courier' : deliveryMethod === 'kurjers';
   const usesLockerPicker = selectedOption?.type === 'pickuppoint';
   const freeShipping = pricesReady && subtotal > 40;
-  const shipping = freeShipping || !selectedOption ? 0 : Number(selectedOption.price);
+  const currentShippingRate = shippingRate?.method === deliveryMethod
+    && shippingRate?.parcelshop === selectedLocker
+    && shippingRate?.country === selectedCountry
+    && shippingRate?.itemCount === itemCount
+    ? shippingRate
+    : null;
+  const shippingPrice = currentShippingRate?.price ?? selectedOption?.price;
+  const shipping = freeShipping || !selectedOption || shippingPrice === undefined ? 0 : Number(shippingPrice);
   useEffect(() => {
     let active = true;
     getShippingCountries()
@@ -383,6 +393,8 @@ function Checkout() {
   useEffect(() => {
     setSelectedLocker('');
     setLockerError('');
+    setShippingRate(null);
+    setShippingRateError('');
     if (!usesLockerPicker || loadingShippingOptions || !selectedCountry) {
       setLockers([]);
       setLoadingLockers(false);
@@ -405,11 +417,45 @@ function Checkout() {
       .finally(() => { if (active) setLoadingLockers(false); });
     return () => { active = false; };
   }, [deliveryMethod, loadingShippingOptions, selectedCountry, usesLockerPicker]);
+  useEffect(() => {
+    if (!usesLockerPicker || !selectedLocker || loadingLockers) {
+      setLoadingShippingRate(false);
+      setShippingRateError('');
+      return undefined;
+    }
+    let active = true;
+    setShippingRate(null);
+    setShippingRateError('');
+    setLoadingShippingRate(true);
+    getShippingOptions(itemCount, selectedCountry, deliveryMethod, selectedLocker)
+      .then((rateResponse) => {
+        if (!active) return;
+        const rates = Array.isArray(rateResponse) ? rateResponse : rateResponse?.options || rateResponse?.data || [];
+        const rate = rates.find((option) => option?.id === deliveryMethod && Number.isFinite(Number(option.price)));
+        if (!rate) {
+          setShippingRateError('Šim pakomātam neizdevās iegūt piegādes cenu.');
+          return;
+        }
+        setShippingRate({
+          method: deliveryMethod,
+          parcelshop: selectedLocker,
+          country: selectedCountry,
+          itemCount,
+          price: Number(rate.price),
+        });
+      })
+      .catch((requestError) => {
+        if (active) setShippingRateError(requestError.message);
+      })
+      .finally(() => { if (active) setLoadingShippingRate(false); });
+    return () => { active = false; };
+  }, [deliveryMethod, itemCount, loadingLockers, selectedCountry, selectedLocker, usesLockerPicker]);
   if (!items.length) return <main className="page container empty-state"><h1>Groziņš ir tukšs</h1><Link className="button button-dark" to="/kolekcijas/stihijas">Apskatīt tējas</Link></main>;
   const deliveryOptions = lockers.map((locker) => ({ id: locker.id, label: locker.name || locker.label || locker.address, address: locker.address, city: locker.city, postcode: locker.postcode }));
   const selectedDeliveryLocation = deliveryOptions.find((option) => option.id === selectedLocker);
   const shippingReady = Boolean(selectedCountry && selectedOption && !loadingCountries && !loadingShippingOptions
-    && (!usesLockerPicker || (!loadingLockers && lockers.length > 0 && selectedLocker)));
+    && Number.isFinite(Number(shippingPrice))
+    && (!usesLockerPicker || (!loadingLockers && !loadingShippingRate && !shippingRateError && lockers.length > 0 && selectedLocker)));
   const submitOrder = async (event) => {
     event.preventDefault();
     if (submitting) return;
@@ -423,7 +469,11 @@ function Checkout() {
         : isPickup && selectedDeliveryLocation
           ? { street: selectedDeliveryLocation.address || selectedDeliveryLocation.label, city: selectedDeliveryLocation.city, postcode: selectedDeliveryLocation.postcode }
           : undefined;
-      const location = isCourier ? `${address.street}, ${address.city}, ${address.postcode}` : values.deliveryLocation;
+      const location = isCourier
+        ? `${address.street}, ${address.city}, ${address.postcode}`
+        : isPickup && selectedDeliveryLocation
+          ? selectedLocker
+          : values.deliveryLocation;
       const payment = await createPaymentSession({
         customer: { firstName: values.firstName, lastName: values.lastName, email: values.email, phone: values.phone },
         delivery: {
@@ -469,14 +519,20 @@ function Checkout() {
               {countries.map((country) => <option key={country.code} value={country.code}>{country.name}</option>)}
             </select>
           </label>
-          <label>Piegādes metode
+          <label>Piegādes veids
             <select name="deliveryMethod" required value={deliveryMethod} disabled={loadingCountries || loadingShippingOptions || !shippingOptions.length} onChange={(event) => setDeliveryMethod(event.target.value)}>
-              {loadingCountries || loadingShippingOptions ? <option value="">Ielādē piegādes veidus…</option> : shippingOptions.map((option) => <option value={option.id} key={option.id}>{option.name} — {freeShipping ? 'Bezmaksas' : `${Number(option.price).toFixed(2)} €`}</option>)}
+              {loadingCountries || loadingShippingOptions ? <option value="">Ielādē piegādes veidus…</option> : shippingOptions.map((option) => {
+                const price = option.id === deliveryMethod ? shippingPrice : option.price;
+                const priceLabel = freeShipping ? 'Bezmaksas' : Number.isFinite(Number(price)) ? `${Number(price).toFixed(2)} €` : 'Izvēlies pakomātu';
+                return <option value={option.id} key={option.id}>{option.name} — {priceLabel}</option>;
+              })}
             </select>
           </label>
           {shippingError && <p className="form-error" role="alert">{shippingError}</p>}
           {loadingLockers && <p role="status">Ielādē pakomātus…</p>}
           {lockerError && <p className="form-error" role="alert">{lockerError}</p>}
+          {loadingShippingRate && <p role="status">Ielādē Swotzy piegādes cenu…</p>}
+          {shippingRateError && <p className="form-error" role="alert">{shippingRateError}</p>}
           {usesLockerPicker && deliveryOptions.length > 0
             ? <LockerSelect options={deliveryOptions} value={selectedLocker} onChange={setSelectedLocker} />
             : usesLockerPicker
@@ -502,7 +558,7 @@ function Checkout() {
       <aside className="summary">
         <span className="eyebrow">TAVS PASŪTĪJUMS</span>
         {items.map((item) => <div className="summary-product" key={item.id}><span>{item.name} × {item.quantity}</span>        <span>{item.price === null ? '—' : `${(item.price * item.quantity).toFixed(2)} €`}</span></div>)}
-        <div><span>Piegāde</span><span>{freeShipping ? 'Bezmaksas' : selectedOption ? `${shipping.toFixed(2)} €` : '—'}</span></div>
+        <div><span>Piegāde</span><span>{freeShipping ? 'Bezmaksas' : Number.isFinite(Number(shippingPrice)) ? `${shipping.toFixed(2)} €` : '—'}</span></div>
                 <div className="summary-total"><b>Kopā</b><b>{pricesReady ? `${(subtotal + shipping).toFixed(2)} €` : '—'}</b></div>
                 {!pricesReady && <PriceUnavailableNotice />}
         {!stockOk && <p className="price-notice" role="alert">Kāda prece groziņā nav noliktavā. Lūdzu, noņem to no groziņa.</p>}
