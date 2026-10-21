@@ -316,7 +316,6 @@ button {
 .hero-feature-row img {
   width: 82px;
   height: 82px;
-  border-radius: 16px;
   object-fit: cover;
   border: 1px solid rgba(255,255,255,0.24);
 }
@@ -439,7 +438,6 @@ button {
 .product-image-wrap {
   display: block;
   overflow: hidden;
-  border-radius: 16px;
   aspect-ratio: 1 / 1.12;
   background: #e7e0d2;
 }
@@ -589,7 +587,6 @@ button {
   overflow: hidden;
   padding: 24px 26px;
   border: 1px solid var(--line);
-  border-radius: 20px;
 }
 
 .collection-tile-active {
@@ -825,7 +822,6 @@ button {
 
 .detail-image {
   overflow: hidden;
-  border-radius: 26px;
   aspect-ratio: 1 / 1.04;
   background: #e6dfd3;
   box-shadow: var(--shadow);
@@ -931,7 +927,6 @@ button {
 }
 
 .cart-item img {
-  border-radius: 18px;
   aspect-ratio: 1;
 }
 
@@ -1448,4 +1443,3 @@ button {
 .detail-image-banner {
   aspect-ratio: 16 / 7;
 }
-
