@@ -57,6 +57,9 @@ export const config = {
     apiToken: process.env.SWOTZY_API_TOKEN,
     currency: process.env.SWOTZY_CURRENCY || 'EUR',
     rateZip: process.env.SWOTZY_RATE_ZIP || '',
+    // Carriers checked for parcel lockers; keep the list short to stay within Swotzy rate limits.
+    parcelCarriers: (process.env.SWOTZY_PARCEL_CARRIERS || 'OMNIVA,DPD,LATVIJAS_PASTS,VENIPAK,ITELLA')
+      .split(',').map((carrier) => carrier.trim().toUpperCase()).filter((carrier) => /^[A-Z_]+$/.test(carrier)),
     // Overrides only; anything left empty is read from the WooCommerce store settings.
     sender: {
       full_name: process.env.SWOTZY_SENDER_NAME,

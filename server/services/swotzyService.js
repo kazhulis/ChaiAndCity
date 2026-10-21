@@ -22,12 +22,16 @@ const carrierNames = {
   VENIPAK: 'Venipak',
 };
 
-async function cached(key, loader) {
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Caches the promise so concurrent callers share one Swotzy request; failures are not cached.
+function cached(key, loader) {
   const hit = cache.get(key);
-  if (hit && Date.now() - hit.at < CACHE_MS) return hit.value;
-  const value = await loader();
-  cache.set(key, { at: Date.now(), value });
-  return value;
+  if (hit && Date.now() - hit.at < CACHE_MS) return hit.promise;
+  const promise = Promise.resolve().then(loader);
+  cache.set(key, { at: Date.now(), promise });
+  promise.catch(() => { if (cache.get(key)?.promise === promise) cache.delete(key); });
+  return promise;
 }
 
 function authHeader() {
@@ -38,10 +42,16 @@ function authHeader() {
 
 async function request(path, options = {}) {
   if (!config.swotzy.enabled) throw new Error('Swotzy shipping is not enabled.');
-  const response = await fetch(`${config.swotzy.apiUrl.replace(/\/$/, '')}${path}`, {
-    ...options,
-    headers: { Authorization: authHeader(), accept: 'application/json', 'Content-Type': 'application/json', ...(options.headers || {}) },
-  });
+  let response;
+  for (let attempt = 0; ; attempt += 1) {
+    response = await fetch(`${config.swotzy.apiUrl.replace(/\/$/, '')}${path}`, {
+      ...options,
+      headers: { Authorization: authHeader(), accept: 'application/json', 'Content-Type': 'application/json', ...(options.headers || {}) },
+    });
+    if (response.status !== 429 || attempt >= 3) break;
+    const retryAfter = Number(response.headers.get('retry-after'));
+    await sleep(Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter, 5) * 1000 : 1000 * (attempt + 1));
+  }
   const body = await response.json().catch(() => null);
   if (!response.ok) {
     const detail = typeof body?.detail === 'string' ? body.detail : body?.message || (body?.detail ? JSON.stringify(body.detail).slice(0, 300) : '');
@@ -85,8 +95,7 @@ async function getSender() {
 export class SwotzyService {
   async getShippingOptions(country, itemCount = 1, method, parcelshopId) {
     if (!method || !parcelshopId) {
-      const parcelshops = await this.getParcelshops(country);
-      const carriers = [...new Set(parcelshops.map((point) => point.carrier).filter(Boolean))];
+      const carriers = await this.getParcelCarriers(country);
       return carriers.map((carrier) => ({
         id: `pickuppoint:${carrier}`,
         type: 'pickuppoint',
@@ -128,19 +137,32 @@ export class SwotzyService {
     }];
   }
 
+  // Probes each configured carrier with a single-item request instead of downloading every parcelshop.
+  async getParcelCarriers(country) {
+    return cached(`carriers:${country}`, async () => {
+      const available = [];
+      for (const carrier of config.swotzy.parcelCarriers) {
+        const params = new URLSearchParams({ carrier, country, size: '1' });
+        const body = await request(`/parcelshops/?${params}`);
+        if (body?.items?.length) available.push(carrier);
+        await sleep(150);
+      }
+      return available;
+    });
+  }
+
   async getParcelshops(country, carrier) {
-    const key = `parcelshops:${country}:${carrier || 'all'}`;
-    return cached(key, async () => {
+    return cached(`parcelshops:${country}:${carrier}`, async () => {
       const parcelshops = [];
       let cursor;
       for (let page = 0; page < MAX_PARCELSHOP_PAGES; page += 1) {
-        const params = new URLSearchParams({ country, size: '100' });
-        if (carrier) params.set('carrier', carrier);
+        const params = new URLSearchParams({ country, carrier, size: '100' });
         if (cursor) params.set('cursor', cursor);
         const body = await request(`/parcelshops/?${params}`);
         parcelshops.push(...(body?.items || []));
         cursor = body?.next_page;
         if (!cursor) break;
+        await sleep(150);
       }
       return parcelshops;
     });
