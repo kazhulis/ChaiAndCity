@@ -113,6 +113,8 @@ const useCart = () => useContext(CartContext);
 const formatPrice = (price) => price === null || price === undefined ? null : `${price.toFixed(2)} €`;
 const PRICE_UNAVAILABLE = '-';
 function PriceTag({ item }) {
+  const { pricesLoading } = useCart();
+  if (item.price === null && pricesLoading) return <span className="price-loading" role="status" aria-label="Cena tiek ielādēta" />;
   if (item.price === null) return PRICE_UNAVAILABLE;
   if (!item.regularPrice) return formatPrice(item.price);
   return <><s className="price-old">{formatPrice(item.regularPrice)}</s> <span className="price-sale">{formatPrice(item.price)}</span></>;
@@ -138,14 +140,33 @@ function Header() {
 }
 
 function AddButton({ product, quantity = 1 }) {
-  const { add } = useCart();
+  const { add, pricesLoading } = useCart();
+  const loading = pricesLoading && product.price === null;
   const [added, setAdded] = useState(false);
   const addToCart = () => { add(product, quantity); setAdded(true); setTimeout(() => setAdded(false), 1800); };
-  return <button className="button button-dark add-button" disabled={product.price === null || !product.inStock} onClick={addToCart}>{!product.inStock ? 'Nav noliktavā' : added ? <><Check size={15} /> Pievienots</> : 'Pievienot groziņam'}</button>;
+  return <button className="button button-dark add-button" aria-busy={loading} disabled={product.price === null || !product.inStock} onClick={addToCart}>{loading ? <><span className="loading-spinner" aria-hidden="true" /> Ielādē...</> : !product.inStock ? 'Nav noliktavā' : added ? <><Check size={15} /> Pievienots</> : 'Pievienot groziņam'}</button>;
+}
+
+function ProductContents({ product }) {
+  const blends = product.name.split('/');
+  return <div className="product-contents">
+    <div className="product-contents-blends">
+      {blends.map((blend, index) => <React.Fragment key={blend}>
+        {index > 0 && <span className="product-contents-plus" aria-hidden="true">+</span>}
+        <div className="product-contents-blend">
+          <span className="product-contents-dots" aria-hidden="true">{Array.from({ length: 4 }, (_, dot) => <span key={dot} />)}</span>
+          <span>{`4 × ${blend}`}</span>
+        </div>
+      </React.Fragment>)}
+    </div>
+    <span className="product-contents-total">Kastītē 8 tējas pogas — pa 4 no katra veida</span>
+  </div>;
 }
 
 function ProductCard({ product }) {
-  return <article className="product-card">
+  const { pricesLoading } = useCart();
+  const loading = pricesLoading && product.price === null;
+  return <article className={`product-card${loading ? ' is-loading' : ''}`} aria-busy={loading}>
     <Link to={`/produkti/${product.id}`} className="product-image-wrap"><img src={product.image} alt={`${product.name} tējas iepakojums`} /></Link>
     <div className="product-meta"><div><span className="eyebrow">{product.collection}</span><h3>{product.name}</h3></div><span className="price"><PriceTag item={product} /></span></div>
     <AddButton product={product} />
@@ -165,7 +186,7 @@ function Home() {
       </div>
       <div className="hero-content">
         <span className="eyebrow">TĒJA IECEĻO PILSĒTĀ</span>
-        <h1>Presēta augu tēja. Roku darbs.</h1>
+        <h1><span>Presēta augu tēja.</span>{' '}<span>Roku Darbs.</span></h1>
         <p>Katrs augs ar savu raksturu, katrs salikums ir savs elements. Atklāj presētu augu tēju, kas radīta <i>ikdienas tējas rituāliem.</i></p>
         <div className="hero-actions">
           <Link className="button button-light" to="/kolekcijas/stihijas">Iepērcies <ArrowRight size={16} /></Link>
@@ -229,7 +250,9 @@ function ElementsCollection() {
 
 function ProductDetail() {
   const { id } = useParams(); const { products, pricesReady, pricesLoading } = useCart(); const product = products.find((item) => item.id === id) || products[0]; const [quantity, setQuantity] = useState(1);
-  return <main className="detail-page container"><div className="detail-gallery"><div className="detail-image"><img src={product.image} alt={`${product.name} tējas iepakojums`} /></div>{product.images.slice(1, 3).map((src, i) => <div className={`detail-image detail-image-wide${i === 0 ? ' detail-image-banner' : ''}`} key={src}><img src={src} alt={`${product.name} — attēls ${i + 2}`} loading="lazy" /></div>)}<div className="detail-image-row">{product.images.slice(3, 5).map((src, i) => <div className="detail-image" key={src}><img src={src} alt={`${product.name} — attēls ${i + 4}`} loading="lazy" /></div>)}</div></div><div className="detail-copy"><span className="eyebrow">{product.collection}</span><h1>{product.name}</h1><div className="detail-price"><PriceTag item={product} /></div>{!pricesReady && !pricesLoading && <PriceUnavailableNotice />}<p className="detail-description">{product.description}</p><div className="detail-info"><div><span className="eyebrow">SASTĀVS</span><p>{product.ingredients}</p><p><strong>Pagatavošana:</strong> Vienu tējas pogu ievieto 400 ml kanniņā, pārlej ar 90 °C karstu ūdeni un ļauj ievilkties 5 minūtes.</p></div></div><div className="purchase-row"><div className="quantity"><button onClick={() => setQuantity(Math.max(1, quantity - 1))} aria-label="Samazināt daudzumu"><Minus size={15} /></button><span>{quantity}</span><button onClick={() => setQuantity(quantity + 1)} aria-label="Palielināt daudzumu"><Plus size={15} /></button></div><AddButton product={product} quantity={quantity} /></div></div><div className="related"><div className="section-heading"><span className="eyebrow">VARĒTU PATIKT ARĪ</span><span className="line" /></div><div className="product-grid">{products.filter((item) => item.id !== product.id).map((item) => <ProductCard product={item} key={item.id} />)}</div></div></main>;
+  return <main className="detail-page container"><div className="detail-gallery"><div className="detail-image"><img src={product.image} alt={`${product.name} tējas iepakojums`} /></div>{product.images.slice(1, 3).map((src, i) => <div className={`detail-image detail-image-wide${i === 0 ? ' detail-image-banner' : ''}`} key={src}><img src={src} alt={`${product.name} — attēls ${i + 2}`} loading="lazy" /></div>)}<div className="detail-image-row">{product.images.slice(3, 5).map((src, i) => <div className="detail-image" key={src}><img src={src} alt={`${product.name} — attēls ${i + 4}`} loading="lazy" /></div>)}</div></div><div className="detail-copy"><span className="eyebrow">{product.collection}</span><h1>{product.name}</h1><div className="detail-price"><PriceTag item={product} /></div>{!pricesReady && !pricesLoading && <PriceUnavailableNotice />}
+    <ProductContents product={product} />
+    <p className="detail-description">{product.description}</p><div className="detail-info"><div><span className="eyebrow">SASTĀVS</span><p>{product.ingredients}</p><p><strong>Pagatavošana:</strong> Vienu tējas pogu ievieto 400 ml kanniņā, pārlej ar 90 °C karstu ūdeni un ļauj ievilkties 5 minūtes.</p></div></div><div className="purchase-row"><div className="quantity"><button onClick={() => setQuantity(Math.max(1, quantity - 1))} aria-label="Samazināt daudzumu"><Minus size={15} /></button><span>{quantity}</span><button onClick={() => setQuantity(quantity + 1)} aria-label="Palielināt daudzumu"><Plus size={15} /></button></div><AddButton product={product} quantity={quantity} /></div></div><div className="related"><div className="section-heading"><span className="eyebrow">VARĒTU PATIKT ARĪ</span><span className="line" /></div><div className="product-grid">{products.filter((item) => item.id !== product.id).map((item) => <ProductCard product={item} key={item.id} />)}</div></div></main>;
 }
 
 function Cart() {
@@ -327,6 +350,7 @@ function Checkout() {
   const [shippingError, setShippingError] = useState('');
   const [lockerError, setLockerError] = useState('');
   const [shippingOptions, setShippingOptions] = useState([]);
+  const [shippingEstimates, setShippingEstimates] = useState({});
   const [lockers, setLockers] = useState([]);
   const [selectedLocker, setSelectedLocker] = useState('');
   const [shippingRate, setShippingRate] = useState(null);
@@ -366,6 +390,7 @@ function Checkout() {
   useEffect(() => {
     if (!selectedCountry) {
       setShippingOptions([]);
+      setShippingEstimates({});
       setDeliveryMethod('');
       setLoadingShippingOptions(false);
       return undefined;
@@ -390,6 +415,29 @@ function Checkout() {
       .finally(() => { if (active) setLoadingShippingOptions(false); });
     return () => { active = false; };
   }, [itemCount, selectedCountry]);
+  useEffect(() => {
+    let active = true;
+    setShippingEstimates({});
+    if (freeShipping) return undefined;
+    const pendingOptions = shippingOptions.filter((option) => option.type === 'pickuppoint' && (option.price === null || option.price === undefined));
+    pendingOptions.forEach(async (option) => {
+      try {
+        const lockersResponse = await getParcelLockers(option.id, selectedCountry);
+        const lockerList = Array.isArray(lockersResponse) ? lockersResponse : lockersResponse?.lockers || lockersResponse?.data || [];
+        const locker = lockerList.find((point) => point?.id);
+        if (!locker) throw new Error('Šim pārvadātājam nav pieejamu pakomātu.');
+        if (!active) return;
+        const rateResponse = await getShippingOptions(itemCount, selectedCountry, option.id, locker.id);
+        const rates = Array.isArray(rateResponse) ? rateResponse : rateResponse?.options || rateResponse?.data || [];
+        const rate = rates.find((entry) => entry?.id === option.id && entry.price !== null && entry.price !== undefined && Number.isFinite(Number(entry.price)) && Number(entry.price) >= 0);
+        if (!rate) throw new Error('Aptuvenā piegādes cena nav pieejama.');
+        if (active) setShippingEstimates((current) => ({ ...current, [option.id]: { price: Number(rate.price) } }));
+      } catch (requestError) {
+        if (active) setShippingEstimates((current) => ({ ...current, [option.id]: { error: requestError.message } }));
+      }
+    });
+    return () => { active = false; };
+  }, [freeShipping, itemCount, selectedCountry, shippingOptions]);
   useEffect(() => {
     setSelectedLocker('');
     setLockerError('');
@@ -523,11 +571,17 @@ function Checkout() {
             <select name="deliveryMethod" required value={deliveryMethod} disabled={loadingCountries || loadingShippingOptions || !shippingOptions.length} onChange={(event) => setDeliveryMethod(event.target.value)}>
               {loadingCountries || loadingShippingOptions ? <option value="">Ielādē piegādes veidus…</option> : shippingOptions.map((option) => {
                 const price = option.id === deliveryMethod ? shippingPrice : option.price;
-                const priceLabel = freeShipping ? 'Bezmaksas' : Number.isFinite(Number(price)) ? `${Number(price).toFixed(2)} €` : 'Izvēlies pakomātu';
+                const estimate = shippingEstimates[option.id];
+                const priceLabel = freeShipping ? 'Bezmaksas'
+                  : price !== null && price !== undefined && Number.isFinite(Number(price)) ? `${Number(price).toFixed(2)} €`
+                    : estimate?.price !== undefined ? `Aptuveni ${estimate.price.toFixed(2)} €`
+                      : estimate?.error ? 'Aptuvenā cena nav pieejama; izvēlies pakomātu'
+                        : option.type === 'pickuppoint' ? 'Ielādē aptuveno cenu…' : 'Cena nav pieejama';
                 return <option value={option.id} key={option.id}>{option.name} — {priceLabel}</option>;
               })}
             </select>
           </label>
+          {shippingOptions.some((option) => shippingEstimates[option.id]?.price !== undefined) && <p className="form-note">Aptuvenās cenas aprēķinātas paraugpakomātam. Precīzu cenu parādīsim pēc pakomāta izvēles.</p>}
           {shippingError && <p className="form-error" role="alert">{shippingError}</p>}
           {loadingLockers && <p role="status">Ielādē pakomātus…</p>}
           {lockerError && <p className="form-error" role="alert">{lockerError}</p>}

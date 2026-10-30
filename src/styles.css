@@ -160,7 +160,7 @@ button {
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(260px, 0.7fr);
-  align-items: end;
+  align-items: center;
   gap: 36px;
   overflow: hidden;
   min-height: 680px;
@@ -201,9 +201,11 @@ button {
 .hero-content {
   position: relative;
   z-index: 1;
-  width: min(620px, 100%);
+  grid-column: 1 / -1;
+  container-type: inline-size;
+  width: min(1080px, calc(100% - clamp(0px, 3vw, 48px)));
   margin-left: clamp(0px, 3vw, 48px);
-  padding-top: clamp(110px, 18vh, 200px);
+  padding-top: 0;
   color: #fff;
 }
 
@@ -222,6 +224,15 @@ button {
   line-height: 0.94;
   letter-spacing: -0.08em;
   font-weight: 400;
+}
+
+.hero h1 {
+  font-size: min(110px, 10cqw);
+}
+
+.hero h1 span {
+  display: block;
+  white-space: nowrap;
 }
 
 .hero h1 i,
@@ -479,6 +490,93 @@ button {
 }
 
 .add-button { width: 100%; }
+
+.product-contents {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--paper-strong);
+}
+
+.product-contents-blends {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.product-contents-blend {
+  display: grid;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.product-contents-dots {
+  display: flex;
+  gap: 5px;
+}
+
+.product-contents-dots span {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #80734c;
+}
+
+.product-contents-blend:last-child .product-contents-dots span {
+  background: #b57d60;
+}
+
+.product-contents-plus {
+  color: var(--muted);
+  font-family: var(--mono);
+}
+
+.product-contents-total {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.product-card.is-loading .product-image-wrap img {
+  opacity: 0.55;
+}
+
+.price-loading {
+  display: inline-block;
+  width: 5ch;
+  height: 1em;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--line) 25%, var(--paper-strong) 50%, var(--line) 75%);
+  background-size: 200% 100%;
+  animation: price-shimmer 1.4s ease-in-out infinite;
+}
+
+.loading-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: loading-spin 0.8s linear infinite;
+}
+
+@keyframes price-shimmer {
+  to { background-position: -200% 0; }
+}
+
+@keyframes loading-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .price-loading,
+  .loading-spinner {
+    animation: none;
+  }
+}
 
 .manifesto {
   display: grid;
