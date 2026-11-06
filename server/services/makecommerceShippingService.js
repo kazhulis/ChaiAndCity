@@ -1,6 +1,7 @@
 import { config } from '../config.js';
 
 const CACHE_MS = 6 * 60 * 60 * 1000;
+const RATE_CACHE_MS = 5 * 60 * 1000;
 const cache = new Map();
 const shippingAppInfo = Buffer.from(JSON.stringify({
   module: 'ChaiAndCity',
@@ -24,7 +25,9 @@ function headers(extra = {}) {
 
 async function request(path, options = {}) {
   const method = options.method || 'GET';
-  const response = await fetch(`${config.makecommerce.shippingApiUrl}${path}`, { ...options, headers: headers(options.headers) });
+  const response = await fetch(`${config.makecommerce.shippingApiUrl}${path}`, {
+    ...options, signal: options.signal || AbortSignal.timeout(15_000), headers: headers(options.headers),
+  });
   const responseText = await response.text();
   let body;
   try {
@@ -52,12 +55,13 @@ async function request(path, options = {}) {
   return body;
 }
 
-async function cached(key, loader) {
+async function cached(key, loader, ttl = CACHE_MS) {
   const hit = cache.get(key);
-  if (hit && Date.now() - hit.at < CACHE_MS) return hit.value;
-  const value = await loader();
-  cache.set(key, { at: Date.now(), value });
-  return value;
+  if (hit && Date.now() - hit.at < ttl) return hit.promise;
+  const promise = Promise.resolve().then(loader);
+  cache.set(key, { at: Date.now(), promise });
+  promise.catch(() => { if (cache.get(key)?.promise === promise) cache.delete(key); });
+  return promise;
 }
 
 export function isShippingEnabled() {
@@ -84,7 +88,7 @@ export class MakeCommerceShippingService {
 
   async getShippingOptions(weight, country = config.makecommerce.country) {
     if (!isShippingCountrySupported(country)) throw new Error('Neatbalstīta piegādes valsts.');
-    const rates = await cached(`rates:${country}:${weight}`, () => request('/rates', { method: 'POST', body: JSON.stringify({ weight, destination: country }) }));
+    const rates = await cached(`rates:${country}:${weight}`, () => request('/rates', { method: 'POST', body: JSON.stringify({ weight, destination: country }) }), RATE_CACHE_MS);
     return ['pickuppoint', 'courier'].flatMap((type) => (rates?.[type] || []).map((rate) => ({
       id: `${type}:${rate.carrier}`,
       type,

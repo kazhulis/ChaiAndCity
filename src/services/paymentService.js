@@ -17,9 +17,10 @@ export async function createPaymentSession(order) {
   return response.json();
 }
 
-export async function getOrderStatus(orderId) {
+export async function getOrderStatus(orderId, statusToken) {
   const response = await fetch(
-    `${API_URL}/api/orders/${encodeURIComponent(orderId)}`
+    `${API_URL}/api/orders/${encodeURIComponent(orderId)}`,
+    { headers: { 'x-order-status-token': statusToken } }
   );
 
   if (!response.ok) {

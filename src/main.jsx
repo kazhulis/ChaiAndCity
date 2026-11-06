@@ -1,9 +1,9 @@
-﻿import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { HashRouter, Link, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowRight, Check, Instagram, Lock, Minus, Plus, ShoppingBag, X } from 'lucide-react';
 import './styles.css';
-import { createPaymentSession } from './services/paymentService';
+import { createPaymentSession, getOrderStatus } from './services/paymentService';
 import { getParcelLockers, getShippingCountries, getShippingOptions, setupMakeCommerceShipping } from './services/shippingService';
 import { getProductPrices } from './services/productService';
 import heroImage from './assets/IMG_4472.jpg';
@@ -540,6 +540,9 @@ function Checkout() {
         })),
         total: subtotal + shipping,
       });
+      if (payment.orderId && payment.statusToken) {
+        sessionStorage.setItem(`chai-payment-status:${payment.orderId}`, payment.statusToken);
+      }
       if (payment.checkoutUrl) { window.location.assign(payment.checkoutUrl); return; }
       setSubmitted(true);
       setSubmitting(false);
@@ -625,14 +628,60 @@ function Checkout() {
 function PaymentResult() {
   const { clear } = useContext(CartContext);
   const [params] = useSearchParams();
-  const status = params.get('status');
-  useEffect(() => { if (status === 'success') clear?.(); }, [status]);
-  const text = {
-    success: ['Paldies! Maksājums saņemts', 'Tavs pasūtījums ir apmaksāts. Apstiprinājums tiks nosūtīts uz e-pastu.'],
+  const orderId = params.get('order');
+  const [verifiedStatus, setVerifiedStatus] = useState('checking');
+  useEffect(() => {
+    let active = true;
+    let timer;
+    let token;
+    const key = `chai-payment-status:${orderId}`;
+    try { token = orderId ? sessionStorage.getItem(key) : null; } catch { token = null; }
+    if (!token) {
+      setVerifiedStatus('unverified');
+      return undefined;
+    }
+    let checks = 0;
+    async function checkOrder() {
+      try {
+        const order = await getOrderStatus(orderId, token);
+        if (!active) return;
+        if (order.paymentStatus === 'paid') {
+          setVerifiedStatus('paid');
+          clear();
+          try { sessionStorage.removeItem(key); } catch { /* Storage may be blocked. */ }
+          return;
+        }
+        if (['cancelled', 'failed', 'expired'].includes(order.paymentStatus)) {
+          setVerifiedStatus(order.paymentStatus);
+          return;
+        }
+        checks += 1;
+        if (checks < 6) {
+          setVerifiedStatus('checking');
+          timer = setTimeout(checkOrder, 2500);
+        } else {
+          setVerifiedStatus('pending');
+        }
+      } catch {
+        if (active) setVerifiedStatus('unverified');
+      }
+    }
+    setVerifiedStatus('checking');
+    checkOrder();
+    return () => { active = false; clearTimeout(timer); };
+  }, [orderId]);
+  const messages = {
+    paid: ['Paldies! Maksājums saņemts', 'Tavs pasūtījums ir apmaksāts. Apstiprinājums tiks nosūtīts uz e-pastu.'],
     cancelled: ['Maksājums atcelts', 'Maksājums netika veikts. Vari mēģināt vēlreiz.'],
-    pending: ['Maksājums tiek apstrādāts', 'Mēs pārbaudām maksājuma statusu. Apstiprinājumu saņemsi e-pastā.'],
-  }[status] || ['Maksājums neizdevās', 'Neizdevās apstiprināt maksājumu. Lūdzu, mēģini vēlreiz.'];
-  return <main className="checkout-page container"><div className="success-message"><Check size={26} /><h2>{text[0]}</h2><p>{text[1]}</p><Link to={status === 'success' ? '/' : '/checkout'} className="button button-dark">{status === 'success' ? 'Atgriezties sākumā' : 'Atpakaļ uz pasūtījumu'}</Link></div></main>;
+    failed: ['Maksājums neizdevās', 'Maksājums netika pabeigts. Vari mēģināt vēlreiz.'],
+    expired: ['Maksājuma laiks beidzies', 'Maksājums netika pabeigts. Vari mēģināt vēlreiz.'],
+    checking: ['Pārbaudām maksājumu', 'Lūdzu, uzgaidi, kamēr pārbaudām pasūtījuma statusu.'],
+    pending: ['Maksājums tiek apstrādāts', 'Apmaksa vēl nav apstiprināta. Ja maksāji, nepabeidz maksājumu atkārtoti, pirms pārbaudi statusu.'],
+    unverified: ['Maksājuma statusu nevar pārbaudīt', 'Nevaram apstiprināt apmaksu šajā pārlūkā. Ja maksāji, nepabeidz maksājumu atkārtoti, pirms sazinies ar veikalu.'],
+  };
+  const text = messages[verifiedStatus] || messages.unverified;
+  const paid = verifiedStatus === 'paid';
+  return <main className="checkout-page container"><div className="success-message">{paid && <Check size={26} />}<h2>{text[0]}</h2><p>{text[1]}</p><Link to={paid ? '/' : '/checkout'} className="button button-dark">{paid ? 'Atgriezties sākumā' : 'Atpakaļ uz pasūtījumu'}</Link></div></main>;
 }
 
 function ShippingSetup() {

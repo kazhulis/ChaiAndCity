@@ -26,8 +26,13 @@ export function validateOrder(input) {
   if (input.termsAccepted !== true || input.privacyAccepted !== true) {
     throw new ValidationError('Lai turpinātu, jāpiekrīt lietošanas noteikumiem un privātuma politikai.');
   }
-  if (input.items.length > 50) throw new ValidationError('Pasūtījumā ir pārāk daudz preču.');
-  if (input.items.some((item) => ((!Number.isInteger(item.productId) && typeof item.productId !== 'string') || (typeof item.productId === 'string' && !item.productId.trim()) || !Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > 100))) {
+  if (input.items.length > 50) {
+    throw new ValidationError('Pasūtījumā ir pārāk daudz preču.');
+  }
+  if (input.items.some((item) => !item || !Number.isInteger(item.productId) || item.productId < 1 || !Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > 100)) {
     throw new ValidationError('Pasūtījumā ir nederīga prece vai daudzums.');
+  }
+  if (input.items.reduce((sum, item) => sum + item.quantity, 0) > 100) {
+    throw new ValidationError('Pasūtījumā ir pārāk daudz preču.');
   }
 }

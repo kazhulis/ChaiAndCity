@@ -30,6 +30,7 @@ async function request(path, options = {}) {
   if (!config.woocommerce.enabled) return null;
   const response = await fetch(signedUrl(options.method || 'GET', apiUrl(path)), {
     ...options,
+    signal: options.signal || AbortSignal.timeout(15_000),
     headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
   });
   const body = await response.json().catch(() => null);
@@ -102,6 +103,12 @@ export class WooCommerceService {
           { key: 'consent_accepted_at', value: order.consentAcceptedAt },
         ],
       }),
+    });
+  }
+
+  async cancelOrder(orderId) {
+    return request(`/orders/${encodeURIComponent(orderId)}`, {
+      method: 'PUT', body: JSON.stringify({ status: 'cancelled' }),
     });
   }
 

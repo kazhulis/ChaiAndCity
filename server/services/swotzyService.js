@@ -46,6 +46,7 @@ async function request(path, options = {}) {
   for (let attempt = 0; ; attempt += 1) {
     response = await fetch(`${config.swotzy.apiUrl.replace(/\/$/, '')}${path}`, {
       ...options,
+      signal: options.signal || AbortSignal.timeout(15_000),
       headers: { Authorization: authHeader(), accept: 'application/json', 'Content-Type': 'application/json', ...(options.headers || {}) },
     });
     if (response.status !== 429 || attempt >= 3) break;

@@ -12,8 +12,12 @@ export function calculateTotal(order, shippingOptions, productPrices) {
   }, 0);
   const option = shippingOptions.find((entry) => entry.id === order.delivery.method);
   if (!option) throw new ValidationError('Nederīgs piegādes veids.');
-  const shipping = subtotal > FREE_SHIPPING_OVER ? 0 : Number(option.price);
-  return { subtotal, shipping, total: subtotal + shipping };
+  const quotedShipping = option.price === null || option.price === undefined || option.price === '' ? NaN : Number(option.price);
+  if (!Number.isFinite(quotedShipping) || quotedShipping < 0) {
+    throw new ValidationError('Piegādes cena nav pieejama.');
+  }
+  const shipping = subtotal > FREE_SHIPPING_OVER ? 0 : quotedShipping;
+  return { subtotal, shipping, total: Math.round((subtotal + shipping) * 100) / 100 };
 }
 
 export function verifyMac(json, mac) {
@@ -30,6 +34,7 @@ export class MakeCommerceService {
     const callback = (path) => ({ url: `${publicApiUrl}${path}`, method: 'POST' });
     const response = await fetch(`${apiUrl}/v1/transactions`, {
       method: 'POST',
+      signal: AbortSignal.timeout(15_000),
       headers: {
         Authorization: `Basic ${Buffer.from(`${shopId}:${secretKey}`).toString('base64')}`,
         'Content-Type': 'application/json',

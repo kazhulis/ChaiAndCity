@@ -47,16 +47,51 @@ const mcShipping = new MakeCommerceShippingService();
 // SHIPPING_PROVIDER=makecommerce (default) or swotzy decides who supplies rates, pickup points and shipments.
 const useSwotzyShipping = config.shippingProvider === 'swotzy';
 
-// Creates the shipment with the active provider so it shows up in that provider's dashboard.
+// Never silently fall back to mock shipping or a different provider.
 async function createShipment(order) {
-  if (!useSwotzyShipping && isShippingEnabled()) return mcShipping.createShipment(order);
-  return swotzy.createShipment(order);
+  if (useSwotzyShipping) {
+    if (!config.swotzy.enabled) throw new Error('Swotzy shipping is not enabled.');
+    return swotzy.createShipment(order);
+  }
+  if (!isShippingEnabled()) throw new Error('MakeCommerce Shipping is not enabled.');
+  return mcShipping.createShipment(order);
+}
+
+// Persist the claim before contacting a provider. A crashed/uncertain attempt must
+// be reconciled manually rather than risk purchasing a duplicate shipment.
+async function ensureShipment(orderId) {
+  const order = getOrder(orderId);
+  if (!order || order.paymentStatus !== 'paid' || order.shippingStatus !== 'not_created') return;
+  updateOrder(orderId, { shippingStatus: 'creating', shippingAttemptedAt: new Date().toISOString() });
+  try {
+    const shipment = await createShipment(order);
+    if (!shipment?.status || String(shipment.shipmentId || '').startsWith('mock-')) {
+      throw new Error('Shipping provider did not confirm shipment creation.');
+    }
+    updateOrder(orderId, {
+      shippingStatus: shipment.status,
+      shipmentId: shipment.shipmentId || null,
+      shipmentProvider: config.shippingProvider,
+      shipmentCreatedAt: new Date().toISOString(),
+      shipmentError: null,
+    });
+  } catch (error) {
+    updateOrder(orderId, {
+      shippingStatus: 'requires_review',
+      shipmentError: String(error?.message || error).slice(0, 500),
+    });
+    console.error(`Shipment for order ${orderId} requires manual reconciliation:`, error);
+    throw error;
+  }
 }
 
 async function loadShippingOptions(itemCount = 1, country = config.makecommerce.country, method, parcelshopId) {
   if (!isShippingCountrySupported(country)) throw new ValidationError('Neatbalstīta piegādes valsts.');
-  if (useSwotzyShipping) return swotzy.getShippingOptions(country, itemCount, method, parcelshopId);
-  if (!isShippingEnabled()) return swotzy.getShippingOptions(country, itemCount, method, parcelshopId);
+  if (useSwotzyShipping) {
+    if (!config.swotzy.enabled) throw new Error('Swotzy shipping is not enabled.');
+    return swotzy.getShippingOptions(country, itemCount, method, parcelshopId);
+  }
+  if (!isShippingEnabled()) throw new Error('MakeCommerce Shipping is not enabled.');
   const count = Math.max(1, Math.min(Number.parseInt(itemCount, 10) || 1, 100));
   return mcShipping.getShippingOptions(count * config.makecommerce.itemWeightGrams, country);
 }
@@ -119,6 +154,10 @@ app.get('/api/shipping/lockers', async (request, response, next) => {
 app.post('/api/payments/sessions', checkoutLimiter, async (request, response, next) => {
   try {
     validateOrder(request.body);
+    // A real payment must never be attached to a mock order.
+    if (config.makecommerce.enabled && !config.woocommerce.enabled) {
+      throw new ValidationError('Tiešsaistes maksājumiem jāaktivizē WooCommerce pasūtījumu izveide.');
+    }
     const consentAcceptedAt = new Date().toISOString();
     const itemCount = request.body.items.reduce((sum, item) => sum + item.quantity, 0);
     // Price and shipping are always computed server-side; client-supplied amounts are ignored.
@@ -144,15 +183,23 @@ app.post('/api/payments/sessions', checkoutLimiter, async (request, response, ne
       consentAcceptedAt,
     };
     const wooOrder = await woocommerce.createOrder(orderRequest);
-    if (wooOrder.total !== undefined && Math.abs(Number(wooOrder.total) - total) > 0.01) {
-      console.warn(`Order ${wooOrder.id}: WooCommerce total ${wooOrder.total} differs from charged total ${total.toFixed(2)}.`);
+    if (config.woocommerce.enabled && (!Number.isFinite(Number(wooOrder.total)) ||
+        Math.round(Number(wooOrder.total) * 100) !== Math.round(total * 100))) {
+      console.error(`Order ${wooOrder.id}: WooCommerce total ${wooOrder.total} differs from payment total ${total.toFixed(2)}.`);
+      try { await woocommerce.cancelOrder(wooOrder.id); } catch (cancelError) {
+        console.error(`Could not cancel mismatched WooCommerce order ${wooOrder.id}:`, cancelError);
+      }
+      throw new Error('Checkout totals do not match. No payment transaction was created.');
     }
+    const statusToken = crypto.randomBytes(32).toString('hex');
     const order = saveOrder({
       id: wooOrder.id,
+      statusToken,
       wooCommerceOrderId: wooOrder.id,
       status: 'pending',
       paymentStatus: 'pending',
       shippingStatus: 'not_created',
+      amount: total,
       paymentUrl: wooOrder.payment_url || null,
       customer: orderRequest.customer,
       delivery: orderRequest.delivery,
@@ -174,13 +221,19 @@ app.post('/api/payments/sessions', checkoutLimiter, async (request, response, ne
       updateOrder(order.id, { paymentUrl: transaction.paymentUrl, transactionId: transaction.transactionId, amount: total });
       order.paymentUrl = transaction.paymentUrl;
     }
-    response.status(201).json({ orderId: order.id, checkoutUrl: order.paymentUrl, status: order.status });
+    response.status(201).json({ orderId: order.id, statusToken, checkoutUrl: order.paymentUrl, status: order.status });
   } catch (error) { next(error); }
 });
 
 app.get('/api/orders/:orderId', (request, response) => {
   const order = getOrder(request.params.orderId);
-  if (!order) return response.status(404).json({ message: 'Pasūtījums nav atrasts.' });
+  const token = request.header('x-order-status-token');
+  const expected = order?.statusToken;
+  // Do not reveal whether the order exists or its payment status without the secret token.
+  if (!expected || !token || token.length !== expected.length ||
+      !crypto.timingSafeEqual(Buffer.from(token), Buffer.from(expected))) {
+    return response.status(404).json({ message: 'Pasūtījums nav atrasts.' });
+  }
   response.json({ status: order.status, paymentStatus: order.paymentStatus });
 });
 
@@ -198,13 +251,18 @@ app.post('/api/webhooks/woocommerce', async (request, response, next) => {
     if (!verifySignature(request, config.webhookSecrets.woocommerce, 'x-wc-webhook-signature')) return response.status(401).json({ message: 'Invalid webhook signature.' });
     const order = request.body;
     if (order.id) {
-      const paymentStatus = order.date_paid || ['processing', 'completed'].includes(order.status) ? 'paid' : order.status;
+      const existingOrder = getOrder(order.id);
+      if (!existingOrder) return response.json({ received: true });
+      const incomingPaymentStatus = ['refunded', 'cancelled', 'failed'].includes(order.status)
+        ? order.status
+        : (order.date_paid || ['processing', 'completed'].includes(order.status) ? 'paid' : order.status);
+      // Old pending webhooks cannot undo a confirmed payment.
+      const paymentStatus = existingOrder.paymentStatus === 'paid' && !['paid', 'refunded'].includes(incomingPaymentStatus)
+        ? 'paid' : incomingPaymentStatus;
       updateOrder(order.id, { status: order.status, paymentStatus });
       if (paymentStatus === 'paid') {
-        const localOrder = getOrder(order.id);
-        if (localOrder && localOrder.shippingStatus === 'not_created') {
-          const shipment = await createShipment(localOrder);
-          updateOrder(order.id, { shippingStatus: shipment.status, swotzyShipmentId: shipment.shipmentId });
+        try { await ensureShipment(order.id); } catch (shipmentError) {
+          console.error('Paid WooCommerce order requires shipping review:', order.id, shipmentError);
         }
       }
     }
@@ -215,15 +273,14 @@ app.post('/api/webhooks/woocommerce', async (request, response, next) => {
 const paying = new Set();
 async function markPaid(orderId) {
   const order = getOrder(orderId);
-  if (!order || (order.paymentStatus === 'paid' && order.shippingStatus !== 'not_created') || paying.has(String(orderId))) return;
+  if (!order || paying.has(String(orderId))) return;
   paying.add(String(orderId));
   try {
   // Update WooCommerce first so a failed call can be retried by the next MakeCommerce notification.
   if (order.paymentStatus !== 'paid') await woocommerce.markPaid(orderId);
   updateOrder(orderId, { status: 'processing', paymentStatus: 'paid' });
-  if (order.shippingStatus === 'not_created') {
-    const shipment = await createShipment(getOrder(orderId));
-    updateOrder(orderId, { shippingStatus: shipment.status, swotzyShipmentId: shipment.shipmentId });
+  try { await ensureShipment(orderId); } catch (shipmentError) {
+    console.error('Paid MakeCommerce order requires shipping review:', orderId, shipmentError);
   }
   } finally { paying.delete(String(orderId)); }
 }
@@ -256,7 +313,8 @@ async function handleReturn(request, response, fallbackStatus) {
   if (!message) return redirectToShop(response, 'failed', '');
   const completed = ['COMPLETED', 'APPROVED'].includes(message.status);
   try { await applyPaymentMessage(message); } catch (error) { console.error('MakeCommerce return handling failed', error); }
-  redirectToShop(response, completed ? 'success' : fallbackStatus, message.reference);
+  const verifiedPaid = getOrder(message.reference)?.paymentStatus === 'paid';
+  redirectToShop(response, verifiedPaid ? 'success' : (completed ? 'pending' : fallbackStatus), message.reference);
 }
 app.post('/api/payments/return', (request, response) => handleReturn(request, response, 'pending'));
 app.post('/api/payments/cancel', (request, response) => handleReturn(request, response, 'cancelled'));
@@ -264,8 +322,13 @@ app.post('/api/payments/cancel', (request, response) => handleReturn(request, re
 app.post('/api/webhooks/makecommerce', async (request, response) => {
   const message = parseSigned(request.body);
   if (!message) return response.status(401).json({ message: 'Invalid signature.' });
-  response.status(200).json({ received: true });
-  try { await applyPaymentMessage(message); } catch (error) { console.error('MakeCommerce notification handling failed', error); }
+  try {
+    await applyPaymentMessage(message);
+    response.status(200).json({ received: true });
+  } catch (error) {
+    console.error('MakeCommerce notification handling failed', error);
+    response.status(500).json({ message: 'Notification processing failed; retry required.' });
+  }
 });
 app.use((error, _request, response, _next) => {
   console.error(error);
@@ -274,4 +337,7 @@ app.use((error, _request, response, _next) => {
   response.status(500).json({ message: 'Radās kļūda. Lūdzu, mēģini vēlreiz vēlāk.' });
 });
 
-app.listen(config.port, () => console.log(`CHAI AND CITY API listening on http://localhost:${config.port}`));
+export { app };
+if (config.nodeEnv !== 'test') {
+  app.listen(config.port, () => console.log(`CHAI AND CITY API listening on http://localhost:${config.port}`));
+}
