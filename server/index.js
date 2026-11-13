@@ -198,6 +198,7 @@ app.post('/api/payments/sessions', checkoutLimiter, async (request, response, ne
       wooCommerceOrderId: wooOrder.id,
       status: 'pending',
       paymentStatus: 'pending',
+      paymentProvider: config.makecommerce.enabled ? 'makecommerce' : 'woocommerce',
       shippingStatus: 'not_created',
       amount: total,
       paymentUrl: wooOrder.payment_url || null,
@@ -218,6 +219,7 @@ app.post('/api/payments/sessions', checkoutLimiter, async (request, response, ne
         country: orderRequest.delivery.country.toLowerCase(),
         locale: 'lv',
       });
+      if (!transaction.transactionId) throw new Error('MakeCommerce did not return a transaction ID.');
       updateOrder(order.id, { paymentUrl: transaction.paymentUrl, transactionId: transaction.transactionId, amount: total });
       order.paymentUrl = transaction.paymentUrl;
     }
@@ -253,14 +255,21 @@ app.post('/api/webhooks/woocommerce', async (request, response, next) => {
     if (order.id) {
       const existingOrder = getOrder(order.id);
       if (!existingOrder) return response.json({ received: true });
+      // Older orders lack a provider field. In MakeCommerce mode, a legacy order
+      // without a transaction ID can also be an unfinished MakeCommerce checkout.
+      const requiresMakeCommercePayment = existingOrder.paymentProvider === 'makecommerce' ||
+        (!existingOrder.paymentProvider && (Boolean(existingOrder.transactionId) || config.makecommerce.enabled));
       const incomingPaymentStatus = ['refunded', 'cancelled', 'failed'].includes(order.status)
         ? order.status
         : (order.date_paid || ['processing', 'completed'].includes(order.status) ? 'paid' : order.status);
+      if (requiresMakeCommercePayment && incomingPaymentStatus === 'paid' && existingOrder.paymentStatus !== 'paid') {
+        return response.json({ received: true });
+      }
       // Old pending webhooks cannot undo a confirmed payment.
       const paymentStatus = existingOrder.paymentStatus === 'paid' && !['paid', 'refunded'].includes(incomingPaymentStatus)
         ? 'paid' : incomingPaymentStatus;
       updateOrder(order.id, { status: order.status, paymentStatus });
-      if (paymentStatus === 'paid') {
+      if (paymentStatus === 'paid' && !requiresMakeCommercePayment) {
         try { await ensureShipment(order.id); } catch (shipmentError) {
           console.error('Paid WooCommerce order requires shipping review:', order.id, shipmentError);
         }
@@ -300,21 +309,23 @@ function redirectToShop(response, status, orderId) {
 // notification URL is unreachable, e.g. PUBLIC_API_URL pointing at localhost. markPaid is idempotent.
 async function applyPaymentMessage(message) {
   const order = getOrder(message.reference);
-  const amountMatches = order && Number(message.amount) === Number(order.amount?.toFixed(2));
-  const transactionMatches = order && (!message.transaction || message.transaction === order.transactionId);
-  const currencyMatches = !message.currency || message.currency === 'EUR';
-  if (['COMPLETED', 'APPROVED'].includes(message.status) && amountMatches && transactionMatches && currencyMatches) await markPaid(message.reference);
-  else if (order && order.paymentStatus !== 'paid' && transactionMatches && ['CANCELLED', 'EXPIRED', 'FAILED'].includes(message.status)) updateOrder(message.reference, { paymentStatus: message.status.toLowerCase() });
+  if (!order?.transactionId || message.transaction !== order.transactionId) return;
+  if (message.status === 'COMPLETED' && message.currency === 'EUR' &&
+      Number(message.amount) === Number(order.amount?.toFixed(2))) {
+    await markPaid(order.id);
+  } else if (order.paymentStatus !== 'paid' && ['CANCELLED', 'EXPIRED', 'FAILED'].includes(message.status)) {
+    updateOrder(order.id, { paymentStatus: message.status.toLowerCase() });
+  }
 }
 
 // MakeCommerce POSTs the customer back here with form fields `json` and `mac`.
 async function handleReturn(request, response, fallbackStatus) {
   const message = parseSigned(request.body);
   if (!message) return redirectToShop(response, 'failed', '');
-  const completed = ['COMPLETED', 'APPROVED'].includes(message.status);
+  const awaitingConfirmation = ['COMPLETED', 'APPROVED'].includes(message.status);
   try { await applyPaymentMessage(message); } catch (error) { console.error('MakeCommerce return handling failed', error); }
   const verifiedPaid = getOrder(message.reference)?.paymentStatus === 'paid';
-  redirectToShop(response, verifiedPaid ? 'success' : (completed ? 'pending' : fallbackStatus), message.reference);
+  redirectToShop(response, verifiedPaid ? 'success' : (awaitingConfirmation ? 'pending' : fallbackStatus), message.reference);
 }
 app.post('/api/payments/return', (request, response) => handleReturn(request, response, 'pending'));
 app.post('/api/payments/cancel', (request, response) => handleReturn(request, response, 'cancelled'));

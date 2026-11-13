@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+﻿import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { HashRouter, Link, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowRight, Check, Instagram, Lock, Minus, Plus, ShoppingBag, X } from 'lucide-react';
@@ -6,7 +6,7 @@ import './styles.css';
 import { createPaymentSession, getOrderStatus } from './services/paymentService';
 import { getParcelLockers, getShippingCountries, getShippingOptions, setupMakeCommerceShipping } from './services/shippingService';
 import { getProductPrices } from './services/productService';
-import heroImage from './assets/IMG_4472.jpg';
+import heroImage from './assets/IMG_Hero.png';
 import processImage from './assets/IMG_Process.JPG';
 import buttonsImage from './assets/IMG_Pogas.JPG';
 
@@ -39,8 +39,8 @@ const baseProducts = [
     woocommerceId: 20,
     images: getProductImages('GAISS_ZEME'),
     image: getProductImages('GAISS_ZEME')[0],
-    description: 'ZEME ir piezemējošs augu maisījums ar siltām sastāvdaļām, kas radīts, lai saskaņotu dzērāju ar šo elementu. GAISS ir viegls un aromātisks augu maisījums ar rūpīgi izvēlētām sastāvdaļām, iedvesmojoties no gaisa svaiguma un kustības.',
-    ingredients: 'ZEME: cigoriņš, ingvers, parmētra, liepu ziedi, kurkuma, bambusa lapas, kliņģerīte. \nGAISS: rozmarīns, lavanda, rožu lapas, lofants, salvija.',
+    description: 'ZEME ir piezemējošs augu maisījums ar siltām sastāvdaļām, kas radīts, lai saskaņotu tējas baudītāju ar šo elementu. GAISS ir viegls un aromātisks augu maisījums ar rūpīgi izvēlētām sastāvdaļām, iedvesmojoties no gaisa svaiguma un kustības.',
+    ingredients: 'ZEME: cigoriņš, ingvers, piparmētra, liepu ziedi, kurkuma, bambusa lapas, kliņģerīte. \nGAISS: rozmarīns, lavanda, rožu lapas, lofants, salvija.',
   },
   {
     id: 'vinš-vina-stihijas',
@@ -59,7 +59,7 @@ const baseProducts = [
     woocommerceId: 13,
     images: getProductImages('SAULE_MENESS'),
     image: getProductImages('SAULE_MENESS')[0],
-    description: 'SAULES un MĒNESS tējas simbolizē dienas un nakts maiņu un mūsu ķermeņa pakļaušanos tai. SAULES tējas sastāvs radīts, lai apmierinātu enerģijas, vitalitātes un dienas sākumavajadzības. MĒNESS tēja atbalsta vēlmi pēc miera, pārdomām un miega.',
+    description: 'SAULES un MĒNESS tējas simbolizē dienas un nakts maiņu un mūsu ķermeņa pakļaušanos tai. SAULES tējas sastāvs veidots, lai atmodinātu snaudošo ķermeni ieddot nepieciešamo vitalitātes un sildošo enereģiju jaunas dienas sākumam. MĒNESS tēja atbalsta vēlmi pēc miera, pārdomām un miega.',
     ingredients: 'SAULE: mate, liepu ziedi, timiāns, pelašķis, saulespuķe, rozā pipari. \nMĒNESS: pūķgalve, vīgrieži, gotu-kola, melisa, rudzupuķes.',
   },
   {
@@ -242,7 +242,10 @@ function ElementsCollection() {
     <div className="page-intro collection-products-intro">
       <span className="eyebrow">KOLEKCIJA 01</span>
       <h1>STIHIJAS</h1>
-      <p>Četras tējas. Četri stāsti. Izvēlies savu šodienas rituālu.</p>
+      <p>Četras tējas. Četri stāsti.  Četri elementi.
+Viņš un Viņa - spēles pāriem. Izvēlies savu šodienas rituālu.
+Sirds un Prāts - izzini sevi.
+</p>
     </div>
     <ProductGrid title="STIHIJU TĒJAS" />
   </main>;

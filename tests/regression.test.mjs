@@ -29,7 +29,7 @@ Object.assign(process.env, {
 const { validateOrder } = await import('../server/validation.js');
 const { calculateTotal } = await import('../server/services/makecommerceService.js');
 const { app } = await import('../server/index.js');
-const { getOrder } = await import('../server/store.js');
+const { getOrder, updateOrder } = await import('../server/store.js');
 
 const originalFetch = globalThis.fetch;
 let nextOrderId = 1500;
@@ -77,9 +77,10 @@ const server = await new Promise((resolve) => {
 });
 const apiRoot = `http://127.0.0.1:${server.address().port}`;
 
-async function api(endpoint, { method = 'GET', body, token, headers = {} } = {}) {
+async function api(endpoint, { method = 'GET', body, token, headers = {}, redirect } = {}) {
   return originalFetch(`${apiRoot}${endpoint}`, {
     method,
+    redirect,
     headers: {
       ...(body ? { 'content-type': 'application/json' } : {}),
       ...(token ? { 'x-order-status-token': token } : {}),
@@ -191,6 +192,63 @@ try {
     assert.equal((await api('/api/webhooks/makecommerce', { method: 'POST', body: message })).status, 200);
     assert.equal(calls.shipments, shipmentCount);
     shippingFailure = false;
+  });
+
+  async function startCheckout() {
+    const response = await api('/api/payments/sessions', { method: 'POST', body: orderPayload() });
+    assert.equal(response.status, 201);
+    const { orderId } = await response.json();
+    return getOrder(orderId);
+  }
+
+  await test('MakeCommerce approval leaves the order pending on both return and notification', async () => {
+    const order = await startCheckout();
+    const message = signedMessage({ reference: String(order.id), status: 'APPROVED', amount: '14.99', transaction: order.transactionId, currency: 'EUR' });
+    const { paidUpdates, shipments } = calls;
+    const returned = await api('/api/payments/return', { method: 'POST', body: message, redirect: 'manual' });
+    assert.equal(returned.status, 303);
+    assert.match(returned.headers.get('location'), /status=pending/);
+    assert.equal((await api('/api/webhooks/makecommerce', { method: 'POST', body: message })).status, 200);
+    assert.equal(getOrder(order.id).paymentStatus, 'pending');
+    assert.equal(calls.paidUpdates, paidUpdates);
+    assert.equal(calls.shipments, shipments);
+  });
+
+  await test('MakeCommerce completion requires the stored transaction ID and EUR currency', async () => {
+    const order = await startCheckout();
+    const completion = { reference: String(order.id), status: 'COMPLETED', amount: '14.99', transaction: order.transactionId, currency: 'EUR' };
+    const { paidUpdates, shipments } = calls;
+    for (const fields of [{ transaction: undefined }, { transaction: 'different-transaction' }, { currency: undefined }, { currency: 'USD' }]) {
+      const response = await api('/api/webhooks/makecommerce', {
+        method: 'POST', body: signedMessage({ ...completion, ...fields }),
+      });
+      assert.equal(response.status, 200);
+      assert.equal(getOrder(order.id).paymentStatus, 'pending');
+    }
+    assert.equal(calls.paidUpdates, paidUpdates);
+    assert.equal(calls.shipments, shipments);
+  });
+
+  await test('WooCommerce cannot confirm payment for current or previously stored MakeCommerce orders', async () => {
+    const { paidUpdates, shipments } = calls;
+    const awaitingTransaction = await startCheckout();
+    updateOrder(awaitingTransaction.id, { transactionId: undefined });
+    const legacy = await startCheckout();
+    updateOrder(legacy.id, { paymentProvider: undefined });
+
+    for (const order of [awaitingTransaction, legacy]) {
+      const body = { id: order.id, status: 'processing', date_paid: new Date().toISOString() };
+      const signature = crypto.createHmac('sha256', process.env.WOOCOMMERCE_WEBHOOK_SECRET)
+        .update(JSON.stringify(body)).digest('base64');
+      const response = await api('/api/webhooks/woocommerce', {
+        method: 'POST', body, headers: { 'x-wc-webhook-signature': signature },
+      });
+      assert.equal(response.status, 200);
+      assert.equal(getOrder(order.id).paymentStatus, 'pending');
+      assert.equal(getOrder(order.id).shippingStatus, 'not_created');
+    }
+    assert.equal(calls.paidUpdates, paidUpdates);
+    assert.equal(calls.shipments, shipments);
   });
 } finally {
   await new Promise((resolve) => server.close(resolve));
